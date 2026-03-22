@@ -178,6 +178,7 @@ All settings via environment variables (`.env`):
 |----------|---------|-------------|
 | `QDRANT_HOST` | `localhost` | Qdrant server host |
 | `QDRANT_PORT` | `6333` | Qdrant server port |
+| `QDRANT_API_KEY` | *(none)* | Optional: Qdrant auth (also passed to Docker) |
 | `OPENEXP_COLLECTION` | `openexp_memories` | Qdrant collection name |
 | `OPENEXP_DATA_DIR` | `~/.openexp/data` | Q-cache, predictions, retrieval logs |
 | `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Where hooks write observations |
