@@ -100,19 +100,38 @@ def _obs_to_payload(obs: Dict) -> Dict:
     }
 
 
-def _load_observations(obs_dir: Path) -> List[Dict]:
-    """Load all observations from JSONL files in directory."""
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+def _load_observations(obs_dir: Path, processed_ids: set = None) -> List[Dict]:
+    """Load all observations from JSONL files in directory.
+
+    Streams line-by-line to avoid loading entire files into memory.
+    Skips files larger than MAX_FILE_SIZE and already-processed IDs early.
+    """
     all_obs = []
     for f in sorted(obs_dir.glob("observations-*.jsonl")):
-        for line in f.read_text().splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                all_obs.append(json.loads(line))
-            except json.JSONDecodeError as e:
-                logger.warning("Skipping malformed JSONL line in %s: %s", f, e)
-                continue
+        try:
+            file_size = f.stat().st_size
+        except OSError:
+            continue
+        if file_size > MAX_FILE_SIZE:
+            logger.warning("Skipping oversized observation file %s (%d bytes > %d limit)", f, file_size, MAX_FILE_SIZE)
+            continue
+        with open(f, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obs = json.loads(line)
+                except json.JSONDecodeError as e:
+                    logger.warning("Skipping malformed JSONL line in %s: %s", f, e)
+                    continue
+                # Skip already-processed IDs early to save memory
+                if processed_ids and obs.get("id", "") in processed_ids:
+                    continue
+                all_obs.append(obs)
     return all_obs
 
 
@@ -127,7 +146,7 @@ def ingest_observations(
         return {"error": f"Observations directory not found: {obs_dir}"}
 
     watermark = IngestWatermark(INGEST_WATERMARK_PATH)
-    all_obs = _load_observations(obs_dir)
+    all_obs = _load_observations(obs_dir, processed_ids=watermark.processed_obs)
     total = len(all_obs)
 
     new_obs = []

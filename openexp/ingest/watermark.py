@@ -34,6 +34,9 @@ class IngestWatermark:
                 logger.warning("Failed to load watermark, starting fresh: %s", e)
 
     def save(self):
+        # Auto-compact when processed_obs grows too large
+        if len(self.processed_obs) > 10000:
+            self.compact()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "version": 1,

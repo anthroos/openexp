@@ -81,12 +81,14 @@ else
   if docker ps -a --format '{{.Names}}' | grep -q '^openexp-qdrant$'; then
     docker start openexp-qdrant >/dev/null
   else
-    docker run -d \
-      --name openexp-qdrant \
-      --restart unless-stopped \
-      -p 127.0.0.1:6333:6333 \
-      -v openexp_qdrant_data:/qdrant/storage \
-      qdrant/qdrant:latest >/dev/null
+    DOCKER_ARGS=(-d --name openexp-qdrant --restart unless-stopped
+      -p 127.0.0.1:6333:6333
+      --user 1000:1000
+      -v openexp_qdrant_data:/qdrant/storage)
+    if [ -n "${QDRANT_API_KEY:-}" ]; then
+      DOCKER_ARGS+=(-e "QDRANT__SERVICE__API_KEY=$QDRANT_API_KEY")
+    fi
+    docker run "${DOCKER_ARGS[@]}" qdrant/qdrant:latest >/dev/null
   fi
   # Wait for Qdrant to be ready
   echo -n "  Waiting for Qdrant..."
@@ -198,8 +200,10 @@ fi
 
 # Test Qdrant connection
 if "$OPENEXP_DIR/.venv/bin/python3" -c "
+import os
 from qdrant_client import QdrantClient
-qc = QdrantClient(host='localhost', port=6333)
+api_key = os.environ.get('QDRANT_API_KEY', '').strip() or None
+qc = QdrantClient(host='localhost', port=6333, api_key=api_key)
 info = qc.get_collection('$COLLECTION')
 print(f'  ✅ Qdrant OK (collection: $COLLECTION, vectors: {info.points_count})')
 " 2>/dev/null; then

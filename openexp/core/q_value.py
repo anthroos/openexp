@@ -6,6 +6,7 @@ get higher Q-values and are prioritized in future retrieval.
 Q-update formula: Q_new = (1 - alpha) * Q_old + alpha * reward
 Scoring formula: z_norm(sim) * w_sim + z_norm(q) * w_q
 """
+import fcntl
 import json
 import logging
 import math
@@ -113,26 +114,38 @@ class QCache:
         self._dirty.clear()
 
     def load_and_merge(self, path: Path, deltas_dir: Path):
-        """Load main cache, then merge all pending deltas."""
-        self.load(path)
-        if deltas_dir.exists():
-            merged_any = False
-            for delta_file in sorted(deltas_dir.glob("q_delta_*.json")):
-                try:
-                    delta_data = json.loads(delta_file.read_text())
-                    for mem_id, q_data in delta_data.items():
-                        existing = self.get(mem_id)
-                        if existing is None or _is_newer(q_data, existing):
-                            self._cache[mem_id] = q_data
-                            self._cache.move_to_end(mem_id)
-                            while len(self._cache) > self._max_size:
-                                self._cache.popitem(last=False)
-                    delta_file.unlink()
-                    merged_any = True
-                except (json.JSONDecodeError, OSError) as e:
-                    logger.warning("Failed to merge delta %s: %s", delta_file, e)
-            if merged_any:
-                self.save(path)
+        """Load main cache, then merge all pending deltas.
+
+        Uses fcntl.flock to prevent concurrent load_and_merge operations
+        from corrupting the cache file.
+        """
+        lock_path = path.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            self.load(path)
+            if deltas_dir.exists():
+                merged_any = False
+                for delta_file in sorted(deltas_dir.glob("q_delta_*.json")):
+                    try:
+                        delta_data = json.loads(delta_file.read_text())
+                        for mem_id, q_data in delta_data.items():
+                            existing = self.get(mem_id)
+                            if existing is None or _is_newer(q_data, existing):
+                                self._cache[mem_id] = q_data
+                                self._cache.move_to_end(mem_id)
+                                while len(self._cache) > self._max_size:
+                                    self._cache.popitem(last=False)
+                        delta_file.unlink()
+                        merged_any = True
+                    except (json.JSONDecodeError, OSError) as e:
+                        logger.warning("Failed to merge delta %s: %s", delta_file, e)
+                if merged_any:
+                    self.save(path)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
 
 
 class QValueUpdater:
