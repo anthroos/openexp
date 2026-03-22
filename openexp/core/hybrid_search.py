@@ -6,7 +6,7 @@ Combines semantic similarity, keyword relevance, recency, importance, and Q-valu
 import math
 import re
 import logging
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any
 from collections import Counter, defaultdict
 
 logger = logging.getLogger(__name__)
@@ -165,13 +165,14 @@ def hybrid_search(
         status_multiplier = STATUS_WEIGHTS.get(status, 1.0)
 
         # Explicit None checks — 0.0 is a valid Q-value (downranked memory)
+        from .q_value import DEFAULT_Q_CONFIG
         q_value = payload.get("q_value")
         if q_value is None:
             q_value = metadata.get("q_value")
         if q_value is None:
             q_value = result.get("q_estimate")
         if q_value is None:
-            q_value = 0.5
+            q_value = DEFAULT_Q_CONFIG["q_init"]
         w_q = weights.get("w_q_value", 0.0)
 
         hybrid_score = (

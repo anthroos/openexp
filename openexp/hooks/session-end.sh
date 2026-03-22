@@ -61,14 +61,18 @@ SUMMARY_FILE="$SESSIONS_DIR/${TODAY}-${SESSION_SHORT}.md"
 
 # Only generate if we found observations and summary doesn't exist yet
 if [ -n "$OBS_FILE" ] && [ ! -f "$SUMMARY_FILE" ]; then
+  export OPENEXP_SESSION_ID="$SESSION_ID"
+  export OPENEXP_OBS_FILE="$OBS_FILE"
+  export OPENEXP_TODAY="$TODAY"
+  export OPENEXP_SUMMARY_FILE="$SUMMARY_FILE"
   "$PYTHON" -c "
-import json, sys
+import json, os, sys
 from pathlib import Path
 from collections import OrderedDict
 
-session_id = '$SESSION_ID'
-obs_file = Path('$OBS_FILE')
-today = '$TODAY'
+session_id = os.environ['OPENEXP_SESSION_ID']
+obs_file = Path(os.environ['OPENEXP_OBS_FILE'])
+today = os.environ['OPENEXP_TODAY']
 
 observations = []
 for line in obs_file.read_text().splitlines():
@@ -119,7 +123,7 @@ if files:
     for name, full in files.items():
         md += f'- {full}\n'
 
-Path('$SUMMARY_FILE').write_text(md)
+Path(os.environ['OPENEXP_SUMMARY_FILE']).write_text(md)
 " 2>/dev/null
 fi
 
