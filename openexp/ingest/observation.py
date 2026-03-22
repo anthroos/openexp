@@ -96,6 +96,7 @@ def _obs_to_payload(obs: Dict) -> Dict:
             "tool": tool,
             "tags": obs.get("tags", []),
             "file_path": obs.get("context", {}).get("file_path", ""),
+            **({"client_id": obs["client_id"]} if obs.get("client_id") else {}),
         },
     }
 

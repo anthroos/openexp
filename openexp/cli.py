@@ -98,6 +98,41 @@ def cmd_log_retrieval(args):
     )
 
 
+def cmd_resolve(args):
+    """Run outcome resolvers to detect CRM changes and apply rewards."""
+    logging.getLogger("openexp").setLevel(logging.INFO)
+
+    from .core.config import Q_CACHE_PATH
+    from .core.q_value import QCache, QValueUpdater
+    from .ingest import _load_configured_resolvers
+    from .outcome import resolve_outcomes
+
+    resolvers = _load_configured_resolvers()
+    if not resolvers:
+        print("No outcome resolvers configured. Set OPENEXP_OUTCOME_RESOLVERS in .env")
+        sys.exit(1)
+
+    q_cache = QCache()
+    q_cache.load(Q_CACHE_PATH)
+    q_updater = QValueUpdater(cache=q_cache)
+
+    result = resolve_outcomes(
+        resolvers=resolvers,
+        q_cache=q_cache,
+        q_updater=q_updater,
+    )
+
+    if result.get("total_events", 0) > 0:
+        q_cache.save(Q_CACHE_PATH)
+
+    print(json.dumps(result, indent=2, default=str))
+
+    events = result.get("total_events", 0)
+    rewarded = result.get("memories_rewarded", 0)
+    resolved = result.get("predictions_resolved", 0)
+    print(f"\nOutcomes: {events} events, {rewarded} memories rewarded, {resolved} predictions resolved")
+
+
 def cmd_stats(args):
     """Show memory system stats."""
     from .core.config import Q_CACHE_PATH
@@ -144,6 +179,9 @@ def main():
     sp_log.add_argument("--memory-ids", required=True, help="Comma-separated memory IDs")
     sp_log.add_argument("--scores", default="", help="Comma-separated scores")
 
+    # resolve
+    sub.add_parser("resolve", help="Run outcome resolvers (CRM stage changes → rewards)")
+
     # stats
     sub.add_parser("stats", help="Show memory stats")
 
@@ -155,6 +193,8 @@ def main():
         cmd_ingest(args)
     elif args.cmd == "log-retrieval":
         cmd_log_retrieval(args)
+    elif args.cmd == "resolve":
+        cmd_resolve(args)
     elif args.cmd == "stats":
         cmd_stats(args)
     else:

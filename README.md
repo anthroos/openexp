@@ -45,6 +45,22 @@ Session ends → productive? (commits, PRs, tests)
 Next session → better memories surface first
 ```
 
+### Outcome-Based Rewards
+
+Beyond session-level heuristics, OpenExp supports **outcome-based rewards** from real business events. When a CRM deal moves from "negotiation" to "won", the memories tagged with that client get rewarded — even if the deal took weeks to close.
+
+```
+add_memory(content="SQUAD prefers Google stack", client_id="comp-squad")
+    ↓
+... weeks of work ...
+    ↓
+CRM: SQUAD deal moves negotiation → won
+    ↓
+resolve_outcomes → finds memories tagged comp-squad → reward +0.8
+```
+
+This creates a much stronger learning signal than "did this session have git commits?"
+
 After a few sessions, OpenExp learns what context actually helps you get work done.
 
 ## Quick Start
@@ -84,6 +100,7 @@ Three hooks integrate with Claude Code automatically:
 | **SessionStart** | Session opens | Searches Qdrant for relevant memories, injects top results as context |
 | **UserPromptSubmit** | Every message | Lightweight recall — adds relevant memories to each prompt |
 | **PostToolUse** | After Write/Edit/Bash | Captures what Claude does as observations (JSONL) |
+| **SessionEnd** | Session closes | Generates summary, triggers ingest + reward (async) |
 
 The MCP server provides 8 tools for explicit memory operations (search, add, predict, reflect).
 
@@ -146,10 +163,11 @@ With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to 
 | Tool | Description |
 |------|-------------|
 | `search_memory` | Hybrid search: BM25 + vector + Q-value reranking |
-| `add_memory` | Store memory with auto-enrichment (type, tags, validity) |
+| `add_memory` | Store memory with auto-enrichment (type, tags, validity). Supports `client_id` for entity tagging |
 | `log_prediction` | Track a prediction for later outcome resolution |
 | `log_outcome` | Resolve prediction with reward → updates Q-values |
 | `get_agent_context` | Full context: memories + pending predictions |
+| `resolve_outcomes` | Run outcome resolvers (CRM stage changes → targeted rewards) |
 | `reflect` | Review recent memories for patterns |
 | `memory_stats` | Q-cache size, prediction accuracy stats |
 | `reload_q_cache` | Hot-reload Q-values from disk |
@@ -165,6 +183,9 @@ openexp ingest
 
 # Preview what would be ingested (dry run)
 openexp ingest --dry-run
+
+# Run outcome resolvers (CRM stage changes → rewards)
+openexp resolve
 
 # Show Q-cache statistics
 openexp stats
@@ -186,6 +207,8 @@ All settings via environment variables (`.env`):
 | `OPENEXP_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embedding model (local, free) |
 | `OPENEXP_EMBEDDING_DIM` | `384` | Embedding dimensions |
 | `OPENEXP_INGEST_BATCH_SIZE` | `50` | Batch size for ingestion |
+| `OPENEXP_OUTCOME_RESOLVERS` | *(none)* | Outcome resolvers (format: `module:Class`) |
+| `OPENEXP_CRM_DIR` | *(none)* | CRM directory for CRMCSVResolver |
 | `ANTHROPIC_API_KEY` | *(none)* | Optional: enables LLM-based enrichment |
 | `OPENEXP_ENRICHMENT_MODEL` | `claude-haiku-4-5-20251001` | Model for auto-enrichment |
 
@@ -213,10 +236,16 @@ openexp/
 │   ├── watermark.py            # Idempotent ingestion tracking
 │   └── filters.py              # Filter trivial observations
 │
+├── resolvers/                  # Outcome resolvers (pluggable)
+│   └── crm_csv.py              # CRM CSV stage transition → reward events
+│
+├── outcome.py                  # Outcome resolution framework
+│
 ├── hooks/                      # Claude Code integration
 │   ├── session-start.sh        # Inject Q-ranked memories at startup
 │   ├── user-prompt-recall.sh   # Per-message context recall
-│   └── post-tool-use.sh        # Capture observations from tool calls
+│   ├── post-tool-use.sh        # Capture observations from tool calls
+│   └── session-end.sh          # Summary + ingest + reward (closes the loop)
 │
 ├── mcp_server.py               # MCP STDIO server (JSON-RPC 2.0)
 ├── reward_tracker.py           # Prediction → outcome → Q-value updates
@@ -246,6 +275,9 @@ PostToolUse hook                                  SessionStart hook
 ~/.openexp/observations/*.jsonl                Qdrant search (top 10)
       │                                          + Q-value reranking
       ↓                                                 ↑
+SessionEnd hook ──→ summary .md                         │
+      │                                                 │
+      ↓ (async)                                         │
 openexp ingest ──→ FastEmbed ──→ Qdrant ─────────────────┘
       │                            ↑
       ↓                            │

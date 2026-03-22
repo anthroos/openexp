@@ -213,11 +213,14 @@ def add_memory(
             "tags": enrichment["tags"],
             "ts_valid_start": ts_valid_start,
             "ts_valid_end": ts_valid_end,
+            **({"client_id": meta["client_id"]} if meta.get("client_id") else {}),
         },
         "importance": enrichment["weight"],
         "ts_valid_start": ts_valid_start,
         "ts_valid_end": ts_valid_end,
         "status": "active",
+        # Preserve client_id at top level for Qdrant filtering
+        **({"client_id": meta["client_id"]} if meta.get("client_id") else {}),
         "status_updated_at": datetime.now(timezone.utc).isoformat(),
     }
 

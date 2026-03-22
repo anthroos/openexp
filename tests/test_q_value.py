@@ -74,7 +74,7 @@ def test_q_updater_basic():
 
     result = updater.update("mem1", reward=0.8)
     first_q = result["q_value"]
-    assert first_q > 0.5  # positive reward should increase Q
+    assert first_q > 0.0  # positive reward should increase Q from 0
     assert result["q_visits"] == 1
 
     result2 = updater.update("mem1", reward=0.8)
@@ -87,7 +87,7 @@ def test_q_updater_negative_reward():
     updater = QValueUpdater(cache=cache)
 
     result = updater.update("mem1", reward=-0.5)
-    assert result["q_value"] < 0.5  # negative reward should decrease Q
+    assert result["q_value"] < 0.0  # negative reward should decrease Q below 0
 
 
 def test_q_updater_floor():
@@ -107,7 +107,7 @@ def test_q_updater_batch():
 
     results = updater.batch_update(["a", "b", "c"], reward=0.8)
     assert len(results) == 3
-    assert all(v["q_value"] > 0.5 for v in results.values())
+    assert all(v["q_value"] > 0.0 for v in results.values())
 
 
 def test_q_scorer_rerank():
