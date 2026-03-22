@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import Filter, FieldCondition, MatchValue
-from .config import QDRANT_HOST, QDRANT_PORT, COLLECTION_NAME
+from .config import QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, COLLECTION_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class MemoryLifecycle:
     """Memory lifecycle management with status tracking and transitions."""
 
     def __init__(self):
-        self.qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+        self.qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, api_key=QDRANT_API_KEY)
 
     def transition(self, memory_id: str, from_status: str, to_status: str) -> bool:
         """Validate and execute a status transition."""

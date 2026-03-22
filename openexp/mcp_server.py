@@ -311,7 +311,7 @@ def handle_request(request: dict) -> dict:
                 "top_memories": [
                     {
                         "content": r.get("memory", "")[:200],
-                        "q_value": r.get("q_value", 0.5),
+                        "q_value": r.get("q_value", 0.0),
                         "type": r.get("memory_type", "fact"),
                     }
                     for r in filtered[:10]

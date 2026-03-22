@@ -143,7 +143,7 @@ def cmd_stats(args):
 
     print(f"Q-cache entries: {len(q_cache._cache)}")
     if q_cache._cache:
-        q_values = [v.get("q_value", 0.5) for v in q_cache._cache.values()]
+        q_values = [v.get("q_value", 0.0) for v in q_cache._cache.values()]
         print(f"Q-value range: [{min(q_values):.3f}, {max(q_values):.3f}]")
         print(f"Q-value mean:  {sum(q_values)/len(q_values):.3f}")
 

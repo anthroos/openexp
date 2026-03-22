@@ -22,7 +22,7 @@ from .config import (
     EMBEDDING_MODEL,
 )
 from .v7_extensions import apply_lifecycle_filter, apply_hybrid_scoring
-from .q_value import QCache
+from .q_value import QCache, DEFAULT_Q_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -129,15 +129,16 @@ def search_memories(
             "metadata": payload.get("metadata", {}),
         }
 
+        q_fallback = DEFAULT_Q_CONFIG["q_init"]
         if q_cache:
             q_data = q_cache.get(str(point.id))
             if q_data:
-                record["q_value"] = q_data.get("q_value", 0.5)
+                record["q_value"] = q_data.get("q_value", q_fallback)
                 record["q_data"] = q_data
             else:
-                record["q_value"] = 0.5
+                record["q_value"] = q_fallback
         else:
-            record["q_value"] = payload.get("q_value", 0.5)
+            record["q_value"] = payload.get("q_value", q_fallback)
 
         results.append(record)
 
@@ -164,7 +165,7 @@ def add_memory(
     1. Embed with FastEmbed
     2. Enrich (try LLM, fallback to defaults)
     3. Upsert to Qdrant
-    4. Update Q-cache with initial Q=0.5
+    4. Update Q-cache with initial Q=0.0
     """
     try:
         from .enrichment import enrich_memory, compute_validity_end
@@ -231,11 +232,12 @@ def add_memory(
     )
 
     if q_cache:
+        q_init = DEFAULT_Q_CONFIG["q_init"]
         q_cache.set(point_id, {
-            "q_value": 0.5,
-            "q_action": 0.5,
-            "q_hypothesis": 0.5,
-            "q_fit": 0.5,
+            "q_value": q_init,
+            "q_action": q_init,
+            "q_hypothesis": q_init,
+            "q_fit": q_init,
             "q_visits": 0,
         })
 

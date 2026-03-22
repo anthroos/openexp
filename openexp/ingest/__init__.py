@@ -21,6 +21,8 @@ def _load_configured_resolvers() -> List:
     if not OUTCOME_RESOLVERS:
         return []
 
+    ALLOWED_PREFIX = "openexp.resolvers."
+
     resolvers = []
     for entry in OUTCOME_RESOLVERS.split(","):
         entry = entry.strip()
@@ -28,6 +30,9 @@ def _load_configured_resolvers() -> List:
             continue
         try:
             module_path, class_name = entry.rsplit(":", 1)
+            if not module_path.startswith(ALLOWED_PREFIX):
+                logger.error("Rejected resolver %s: must start with %s", module_path, ALLOWED_PREFIX)
+                continue
             module = importlib.import_module(module_path)
             cls = getattr(module, class_name)
             resolvers.append(cls())
@@ -108,7 +113,7 @@ def ingest_session(
             if outcome_result.get("total_events", 0) > 0:
                 q_cache.save(Q_CACHE_PATH)
     except Exception as e:
-        logger.error("Outcome resolution failed: %s", e)
-        result["outcomes"] = {"error": str(e)}
+        logger.error("Outcome resolution failed: %s", e, exc_info=True)
+        result["outcomes"] = {"error": "outcome_resolution_failed"}
 
     return result
