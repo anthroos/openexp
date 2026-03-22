@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+.venv/
+venv/
+
+# Environment
+.env
+
+# Data (runtime, user-specific)
+openexp/data/*.json
+openexp/data/*.jsonl
+openexp/data/deltas/
+!openexp/data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache
+.cache/
+.pytest_cache/
+
+# Qdrant data
+qdrant_storage/

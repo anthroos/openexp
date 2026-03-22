@@ -1,0 +1,33 @@
+[project]
+name = "openexp"
+version = "0.1.0"
+description = "Q-learning memory for Claude Code — your AI learns from experience"
+requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
+authors = [
+    { name = "Ivan Pasichnyk", email = "ivan@welabeldata.com" },
+]
+
+dependencies = [
+    "qdrant-client>=1.13.0",
+    "fastembed>=0.4.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+enrichment = [
+    "anthropic>=0.45.0",
+]
+
+[project.scripts]
+openexp = "openexp.cli:main"
+openexp-mcp = "openexp.mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
