@@ -31,11 +31,11 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 # Ingest — observation pipeline
 OBSERVATIONS_DIR = Path(os.getenv(
     "OPENEXP_OBSERVATIONS_DIR",
-    os.path.expanduser("~/.claude-memory/observations")
+    os.path.expanduser("~/.openexp/observations")
 ))
 SESSIONS_DIR = Path(os.getenv(
     "OPENEXP_SESSIONS_DIR",
-    os.path.expanduser("~/.claude-memory/sessions")
+    os.path.expanduser("~/.openexp/sessions")
 ))
 INGEST_WATERMARK_PATH = DATA_DIR / "ingest_watermark.json"
 INGEST_BATCH_SIZE = int(os.getenv("OPENEXP_INGEST_BATCH_SIZE", "50"))
