@@ -79,6 +79,7 @@ TOOLS = [
                 "content": {"type": "string"},
                 "agent": {"type": "string", "default": "main"},
                 "type": {"type": "string", "default": "fact"},
+                "client_id": {"type": "string", "description": "Associated client/entity ID"},
             },
             "required": ["content"],
         },
@@ -154,6 +155,15 @@ TOOLS = [
         },
     },
     {
+        "name": "resolve_outcomes",
+        "description": "Run outcome resolvers to detect business events (CRM stage changes) and apply rewards to tagged memories",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
         "name": "reload_q_cache",
         "description": "Reload Q-cache from disk. Use after manual calibration or bulk Q-value updates.",
         "inputSchema": {
@@ -222,11 +232,14 @@ def handle_request(request: dict) -> dict:
             content = args["content"]
             if len(content) > MAX_CONTENT_LENGTH:
                 return {"content": [{"type": "text", "text": json.dumps({"error": f"Content too long ({len(content)} chars, max {MAX_CONTENT_LENGTH})"})}]}
+            meta = {"source": "mcp"}
+            if args.get("client_id"):
+                meta["client_id"] = args["client_id"]
             result = direct_search.add_memory(
                 content=content,
                 agent_id=args.get("agent", "main"),
                 memory_type=args.get("type", "fact"),
-                metadata={"source": "mcp"},
+                metadata=meta,
                 q_cache=q_cache,
             )
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
@@ -304,6 +317,26 @@ def handle_request(request: dict) -> dict:
                     for r in filtered[:10]
                 ],
             }
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "resolve_outcomes":
+            from .ingest import _load_configured_resolvers
+            from .outcome import resolve_outcomes
+
+            resolvers = _load_configured_resolvers()
+            if not resolvers:
+                return {"content": [{"type": "text", "text": json.dumps({"status": "no_resolvers", "message": "No outcome resolvers configured"})}]}
+
+            result = resolve_outcomes(
+                resolvers=resolvers,
+                reward_tracker=reward_tracker,
+                q_cache=q_cache,
+                q_updater=q_updater,
+            )
+
+            if result.get("total_events", 0) > 0:
+                q_cache.save_delta(DELTAS_DIR, SESSION_ID)
+
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         elif tool_name == "reload_q_cache":
