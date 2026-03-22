@@ -9,7 +9,6 @@ Scoring formula: z_norm(sim) * w_sim + z_norm(q) * w_q
 import fcntl
 import json
 import logging
-import math
 import random
 import statistics
 from collections import OrderedDict
@@ -79,13 +78,12 @@ class QCache:
             self._cache.popitem(last=False)
 
     def get_all_q_values(self) -> List[float]:
-        return [d.get("q_value", 0.5) for d in self._cache.values()]
+        return [d.get("q_value", DEFAULT_Q_CONFIG["q_init"]) for d in self._cache.values()]
 
     def __len__(self):
         return len(self._cache)
 
     def save(self, path: Path):
-        import tempfile as _tmpmod
         data = {k: v for k, v in self._cache.items()}
         tmp_path = path.with_suffix(".tmp")
         tmp_path.write_text(json.dumps(data, ensure_ascii=False))

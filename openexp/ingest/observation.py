@@ -21,7 +21,7 @@ from ..core.config import (
     Q_CACHE_PATH,
 )
 from ..core.direct_search import _get_embedder, _get_qdrant
-from ..core.q_value import QCache
+from ..core.q_value import QCache, DEFAULT_Q_CONFIG
 from .watermark import IngestWatermark
 from .filters import should_keep
 
@@ -216,11 +216,12 @@ def ingest_observations(
                 payload=payload,
             ))
 
+            q_init = DEFAULT_Q_CONFIG["q_init"]
             q_cache.set(point_id, {
-                "q_value": 0.5,
-                "q_action": 0.5,
-                "q_hypothesis": 0.5,
-                "q_fit": 0.5,
+                "q_value": q_init,
+                "q_action": q_init,
+                "q_hypothesis": q_init,
+                "q_fit": q_init,
                 "q_visits": 0,
             })
 
