@@ -15,8 +15,16 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 
 
+MAX_QUERY_LENGTH = 2000
+MAX_MEMORY_IDS = 100
+
+
 def cmd_search(args):
     """Search memories via direct Qdrant + FastEmbed."""
+    if len(args.query) > MAX_QUERY_LENGTH:
+        print(f"Error: query too long ({len(args.query)} chars, max {MAX_QUERY_LENGTH})", file=sys.stderr)
+        sys.exit(1)
+
     from .core.config import Q_CACHE_PATH
     from .core.q_value import QCache
     from .core import direct_search
@@ -77,6 +85,10 @@ def cmd_log_retrieval(args):
 
     if not memory_ids:
         return
+
+    if len(memory_ids) > MAX_MEMORY_IDS:
+        print(f"Error: too many memory IDs ({len(memory_ids)}, max {MAX_MEMORY_IDS})", file=sys.stderr)
+        sys.exit(1)
 
     log_retrieval(
         session_id=args.session_id,

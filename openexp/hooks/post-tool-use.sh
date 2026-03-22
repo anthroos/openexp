@@ -86,7 +86,11 @@ jq -n \
   }' | if command -v flock >/dev/null 2>&1; then
     flock "$OBS_FILE.lock" tee -a "$OBS_FILE" >/dev/null
   else
+    # mkdir-based locking for macOS (no flock available)
+    LOCKDIR="$OBS_FILE.lock"
+    while ! mkdir "$LOCKDIR" 2>/dev/null; do sleep 0.01; done
     cat >> "$OBS_FILE"
+    rmdir "$LOCKDIR"
   fi
 
 echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse"}}'

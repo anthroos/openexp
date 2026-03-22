@@ -1,4 +1,11 @@
-"""OpenExp MCP Server — exposes Q-learning memory to Claude Code via STDIO."""
+"""OpenExp MCP Server — exposes Q-learning memory to Claude Code via STDIO.
+
+SECURITY: This server MUST only run over STDIO transport (stdin/stdout).
+If HTTP transport is ever added, authentication (e.g., bearer tokens, mTLS)
+MUST be implemented before exposing the server on any network interface.
+Running over HTTP without authentication would allow unauthenticated access
+to the memory store and Q-value system.
+"""
 import atexit
 import json
 import sys
@@ -342,11 +349,11 @@ def main():
 
             response = {"jsonrpc": "2.0", "id": request_id, "result": result}
             print(json.dumps(response, default=str), flush=True)
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             error_response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {"code": -32700, "message": f"Parse error: {e}"},
+                "error": {"code": -32700, "message": "Parse error: invalid JSON"},
             }
             print(json.dumps(error_response), flush=True)
         except _ErrorResponse as e:
