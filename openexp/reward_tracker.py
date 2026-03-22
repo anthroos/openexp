@@ -43,7 +43,10 @@ def _load_jsonl(path: Path) -> List[dict]:
         for line in f:
             line = line.strip()
             if line:
-                items.append(json.loads(line))
+                try:
+                    items.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    logger.warning("Skipping malformed JSONL line in %s: %s", path, e)
     return items
 
 
@@ -134,11 +137,11 @@ class RewardTracker:
 
             pred["status"] = "resolved"
             pred["resolved_at"] = _now_iso()
+            memory_ids = list(pred.get("memory_ids_used", []))
             self._rewrite_predictions_file()
 
-        # Update Q-values
+        # Update Q-values (outside lock — memory_ids copied inside lock)
         updated_q = {}
-        memory_ids = pred.get("memory_ids_used", [])
         for mem_id in memory_ids:
             updated_q[mem_id] = self.q_updater.update(mem_id, reward, layer="action")
 

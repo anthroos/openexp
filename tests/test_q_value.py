@@ -130,5 +130,5 @@ def test_q_scorer_rerank():
 def test_is_newer():
     assert _is_newer({"q_updated_at": "2026-01-02"}, {"q_updated_at": "2026-01-01"}) is True
     assert _is_newer({"q_updated_at": "2026-01-01"}, {"q_updated_at": "2026-01-02"}) is False
-    assert _is_newer({}, {"q_updated_at": "2026-01-01"}) is True  # backward compat
+    assert _is_newer({}, {"q_updated_at": "2026-01-01"}) is False  # no timestamp = not newer
     assert _is_newer({"q_updated_at": "2026-01-01"}, {}) is True

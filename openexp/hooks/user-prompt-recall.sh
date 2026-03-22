@@ -27,7 +27,7 @@ if [ "$PROMPT_LEN" -lt 10 ]; then
 fi
 
 # Skip common confirmations
-PROMPT_LOWER=$(echo "$PROMPT" | tr '[:upper:]' '[:lower:]' | xargs)
+PROMPT_LOWER=$(echo "$PROMPT" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 case "$PROMPT_LOWER" in
   "yes"|"no"|"ok"|"continue"|"go"|"done"|"next"|"thanks"|"thank you")
     echo '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit"}}'
@@ -90,12 +90,12 @@ if [ -n "$ALL_IDS" ] && [ "$SESSION_ID" != "unknown" ]; then
     --memory-ids "$ALL_IDS" --scores "$ALL_SCORES" 2>/dev/null) &
 fi
 
-# --- Build output ---
-OUTPUT="## Recall: Context\n$CONTEXT_TEXT\n\n"
-
-printf '%b' "$OUTPUT" | jq -Rs '{
-  hookSpecificOutput: {
-    hookEventName: "UserPromptSubmit",
-    additionalContext: .
-  }
-}'
+# --- Build output using jq for safe string handling ---
+jq -n \
+  --arg context "$CONTEXT_TEXT" \
+  '{
+    hookSpecificOutput: {
+      hookEventName: "UserPromptSubmit",
+      additionalContext: ("## Recall: Context\n" + $context + "\n")
+    }
+  }'

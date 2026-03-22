@@ -78,7 +78,7 @@ ALL_SCORES=""
 CONTEXT_TEXT=""
 if jq -e '.context.results | length > 0' "$RESULTS_FILE" >/dev/null 2>&1; then
   CONTEXT_TEXT=$(jq -r '.context.results[] |
-    "[sim=\(.hybrid_score // .score | . * 100 | floor / 100)] q=\(.q_value // 0.5 | . * 100 | floor / 100)] \(.memory[:200])"' "$RESULTS_FILE")
+    "[sim=\(.hybrid_score // .score | . * 100 | floor / 100)] [q=\(.q_value // 0.5 | . * 100 | floor / 100)] \(.memory[:200])"' "$RESULTS_FILE")
   ALL_IDS=$(jq -r '[.context.results[].id] | join(",")' "$RESULTS_FILE")
   ALL_SCORES=$(jq -r '[.context.results[].score] | map(tostring) | join(",")' "$RESULTS_FILE")
 fi
@@ -96,19 +96,18 @@ if [ -n "$ALL_IDS" ] && [ "$SESSION_ID" != "unknown" ]; then
     --memory-ids "$ALL_IDS" --scores "$ALL_SCORES" 2>/dev/null) &
 fi
 
-# --- Build output ---
+# --- Build output using jq for safe string handling ---
 TODAY=$(date +%Y-%m-%d)
 DAY=$(date +%A)
-OUTPUT="# OpenExp Memory (Q-value ranked)\n"
-OUTPUT+="Query: $PROJECT | $DAY $TODAY\n\n"
 
-if [ -n "$CONTEXT_TEXT" ]; then
-  OUTPUT+="## Relevant Context\n$CONTEXT_TEXT\n\n"
-fi
-
-printf '%b' "$OUTPUT" | jq -Rs '{
-  hookSpecificOutput: {
-    hookEventName: "SessionStart",
-    additionalContext: .
-  }
-}'
+jq -n \
+  --arg project "$PROJECT" \
+  --arg day "$DAY" \
+  --arg today "$TODAY" \
+  --arg context "$CONTEXT_TEXT" \
+  '{
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: ("# OpenExp Memory (Q-value ranked)\nQuery: " + $project + " | " + $day + " " + $today + "\n\n## Relevant Context\n" + $context + "\n")
+    }
+  }'

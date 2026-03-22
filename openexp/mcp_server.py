@@ -5,26 +5,45 @@ import sys
 import logging
 import uuid
 
-from .core.config import DATA_DIR, Q_CACHE_PATH
-from .core.q_value import QCache, QValueUpdater
-from .core import direct_search
-from .reward_tracker import RewardTracker
-
 logger = logging.getLogger(__name__)
 
-# Unique session ID per MCP process (for delta files)
-SESSION_ID = uuid.uuid4().hex[:12]
-DELTAS_DIR = DATA_DIR / "deltas"
+# Lazy-initialized globals (set in _init_server)
+q_cache = None
+q_updater = None
+reward_tracker = None
+direct_search = None
+SESSION_ID = None
+DELTAS_DIR = None
+Q_CACHE_PATH = None
+_initialized = False
 
-# Init Q-cache: load main + merge any pending deltas
-q_cache = QCache()
-q_cache.load_and_merge(Q_CACHE_PATH, DELTAS_DIR)
 
-q_updater = QValueUpdater(cache=q_cache)
-reward_tracker = RewardTracker(data_dir=DATA_DIR, q_updater=q_updater, q_cache=q_cache)
+def _init_server():
+    """Initialize server state. Called once from main(), not at import time."""
+    global q_cache, q_updater, reward_tracker, direct_search
+    global SESSION_ID, DELTAS_DIR, Q_CACHE_PATH, _initialized
 
-# Save only this session's changes as delta on shutdown
-atexit.register(lambda: q_cache.save_delta(DELTAS_DIR, SESSION_ID))
+    if _initialized:
+        return
+
+    from .core.config import DATA_DIR, Q_CACHE_PATH as _qcp
+    from .core.q_value import QCache, QValueUpdater
+    from .core import direct_search as _ds
+    from .reward_tracker import RewardTracker
+
+    Q_CACHE_PATH = _qcp
+    direct_search = _ds
+    SESSION_ID = uuid.uuid4().hex[:12]
+    DELTAS_DIR = DATA_DIR / "deltas"
+
+    q_cache = QCache()
+    q_cache.load_and_merge(Q_CACHE_PATH, DELTAS_DIR)
+
+    q_updater = QValueUpdater(cache=q_cache)
+    reward_tracker = RewardTracker(data_dir=DATA_DIR, q_updater=q_updater, q_cache=q_cache)
+
+    atexit.register(lambda: q_cache.save_delta(DELTAS_DIR, SESSION_ID))
+    _initialized = True
 
 
 TOOLS = [
@@ -148,6 +167,13 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+class _ErrorResponse(Exception):
+    """Raised by handle_request to signal a JSONRPC error (not result)."""
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
+
+
 def handle_request(request: dict) -> dict:
     """Handle a single MCP JSON-RPC request."""
     method = request.get("method")
@@ -159,12 +185,19 @@ def handle_request(request: dict) -> dict:
             "serverInfo": {"name": "openexp", "version": "0.1.0"},
         }
 
+    elif method == "notifications/initialized":
+        return None  # notification — no response
+
     elif method == "tools/list":
         return {"tools": TOOLS}
 
     elif method == "tools/call":
-        tool_name = request["params"]["name"]
-        args = request["params"].get("arguments", {})
+        params = request.get("params", {})
+        tool_name = params.get("name")
+        args = params.get("arguments", {})
+
+        if not tool_name:
+            raise _ErrorResponse(-32602, "Missing tool name")
 
         if tool_name == "search_memory":
             result = direct_search.search_memories(
@@ -232,22 +265,35 @@ def handle_request(request: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         elif tool_name == "reflect":
-            # Lightweight reflection: search recent memories and summarize
+            hours = _clamp(args.get("hours", 24), 1, MAX_REFLECT_HOURS)
+            from datetime import datetime, timezone, timedelta
+            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
             search_result = direct_search.search_memories(
                 query="recent patterns decisions insights",
                 limit=20,
                 q_cache=q_cache,
             )
+            # Filter to memories within the time window
+            all_results = search_result.get("results", [])
+            filtered = []
+            for r in all_results:
+                created = r.get("created_at", "")
+                if created and created >= cutoff.isoformat():
+                    filtered.append(r)
+                elif not created:
+                    filtered.append(r)  # include if no timestamp
+
             result = {
                 "status": "reflected",
-                "memories_found": len(search_result.get("results", [])),
+                "hours": hours,
+                "memories_found": len(filtered),
                 "top_memories": [
                     {
                         "content": r.get("memory", "")[:200],
                         "q_value": r.get("q_value", 0.5),
                         "type": r.get("memory_type", "fact"),
                     }
-                    for r in search_result.get("results", [])[:10]
+                    for r in filtered[:10]
                 ],
             }
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
@@ -267,13 +313,15 @@ def handle_request(request: dict) -> dict:
             }
             return {"content": [{"type": "text", "text": json.dumps(stats, indent=2, default=str)}]}
 
-        return {"error": {"code": -32601, "message": f"Unknown tool: {tool_name}"}}
+        raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")
 
-    return {"error": {"code": -32601, "message": f"Unknown method: {method}"}}
+    raise _ErrorResponse(-32601, f"Unknown method: {method}")
 
 
 def main():
     """Run MCP STDIO transport."""
+    _init_server()
+
     for line in sys.stdin:
         line = line.strip()
         if not line:
@@ -283,6 +331,14 @@ def main():
             request = json.loads(line)
             request_id = request.get("id")
             result = handle_request(request)
+
+            # JSON-RPC notifications (no id) get no response
+            if "id" not in request:
+                continue
+
+            if result is None:
+                continue
+
             response = {"jsonrpc": "2.0", "id": request_id, "result": result}
             print(json.dumps(response, default=str), flush=True)
         except json.JSONDecodeError as e:
@@ -290,6 +346,13 @@ def main():
                 "jsonrpc": "2.0",
                 "id": None,
                 "error": {"code": -32700, "message": f"Parse error: {e}"},
+            }
+            print(json.dumps(error_response), flush=True)
+        except _ErrorResponse as e:
+            error_response = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": e.code, "message": e.message},
             }
             print(json.dumps(error_response), flush=True)
         except Exception as e:

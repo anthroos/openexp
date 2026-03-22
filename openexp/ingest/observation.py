@@ -143,7 +143,7 @@ def ingest_observations(
         if not should_keep(obs):
             filtered += 1
             watermark.mark_obs_skipped()
-            watermark.mark_obs_processed(obs_id)
+            watermark.mark_obs_processed(obs_id, ingested=False)
             continue
         new_obs.append(obs)
 

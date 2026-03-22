@@ -22,7 +22,7 @@ def apply_lifecycle_filter(
     for result in results:
         metadata = result.get("metadata", {})
         payload = result.get("payload", metadata)
-        status = payload.get("status", DEFAULT_STATUS)
+        status = result.get("status") or payload.get("status", DEFAULT_STATUS)
 
         if status == "deleted" and not include_deleted:
             continue

@@ -141,6 +141,8 @@ def hybrid_search(
                 documents.append(doc_text)
         corpus_stats = prepare_corpus_stats(documents)
 
+    from .scoring import _compute_recency, TYPE_BOOST
+
     scored_results = []
     for result in vector_results:
         doc_content = result.get("memory", result.get("content", ""))
@@ -151,26 +153,25 @@ def hybrid_search(
         metadata = result.get("metadata", {})
         payload = result.get("payload", metadata)
 
-        from .scoring import composite_score as _composite_score, _compute_recency, TYPE_BOOST
-
         created_at = payload.get("created_at", metadata.get("created_at"))
         importance = payload.get("importance", metadata.get("importance", 0.8))
-        access_count = payload.get("access_count", metadata.get("access_count", 0))
         memory_type = payload.get("memory_type", metadata.get("type", "fact"))
 
         recency = _compute_recency(created_at)
         type_weight = TYPE_BOOST.get(memory_type, 0.8)
         weighted_importance = importance * type_weight
 
-        status = payload.get("status", "active")
+        status = payload.get("status", result.get("status", "active"))
         status_multiplier = STATUS_WEIGHTS.get(status, 1.0)
 
-        q_value = (
-            payload.get("q_value")
-            or metadata.get("q_value")
-            or result.get("q_estimate")
-            or 0.5
-        )
+        # Explicit None checks — 0.0 is a valid Q-value (downranked memory)
+        q_value = payload.get("q_value")
+        if q_value is None:
+            q_value = metadata.get("q_value")
+        if q_value is None:
+            q_value = result.get("q_estimate")
+        if q_value is None:
+            q_value = 0.5
         w_q = weights.get("w_q_value", 0.0)
 
         hybrid_score = (

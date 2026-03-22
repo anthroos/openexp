@@ -51,7 +51,7 @@ def _is_newer(candidate: Dict, existing: Dict) -> bool:
     if not e_ts:
         return True
     if not c_ts:
-        return True
+        return False  # candidate has no timestamp, can't prove it's newer
     return c_ts > e_ts
 
 
@@ -83,12 +83,19 @@ class QCache:
         return len(self._cache)
 
     def save(self, path: Path):
+        import tempfile as _tmpmod
         data = {k: v for k, v in self._cache.items()}
-        path.write_text(json.dumps(data, ensure_ascii=False))
+        tmp_path = path.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(data, ensure_ascii=False))
+        tmp_path.rename(path)
 
     def load(self, path: Path):
         if path.exists():
-            data = json.loads(path.read_text())
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("Failed to load Q-cache from %s: %s", path, e)
+                return
             for k, v in data.items():
                 self._cache[k] = v
                 self._cache.move_to_end(k)
@@ -103,6 +110,7 @@ class QCache:
         delta_path = deltas_dir / f"q_delta_{session_id}.json"
         data = {k: v for k, v in self._dirty.items()}
         delta_path.write_text(json.dumps(data, ensure_ascii=False))
+        self._dirty.clear()
 
     def load_and_merge(self, path: Path, deltas_dir: Path):
         """Load main cache, then merge all pending deltas."""

@@ -47,10 +47,11 @@ class IngestWatermark:
     def is_obs_processed(self, obs_id: str) -> bool:
         return obs_id in self.processed_obs
 
-    def mark_obs_processed(self, obs_id: str):
+    def mark_obs_processed(self, obs_id: str, ingested: bool = True):
         self.processed_obs.add(obs_id)
         self._new_obs_ids.add(obs_id)
-        self.stats["total_ingested"] = self.stats.get("total_ingested", 0) + 1
+        if ingested:
+            self.stats["total_ingested"] = self.stats.get("total_ingested", 0) + 1
 
     def mark_obs_skipped(self):
         self.stats["total_skipped"] = self.stats.get("total_skipped", 0) + 1
