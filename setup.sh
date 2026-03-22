@@ -84,7 +84,7 @@ else
     docker run -d \
       --name openexp-qdrant \
       --restart unless-stopped \
-      -p 6333:6333 \
+      -p 127.0.0.1:6333:6333 \
       -v openexp_qdrant_data:/qdrant/storage \
       qdrant/qdrant:latest >/dev/null
   fi

@@ -82,7 +82,7 @@ def _obs_to_payload(obs: Dict) -> Dict:
         "user_id": "default",
         "created_at": obs.get("timestamp", now),
         "source": "observation",
-        "hash": hashlib.md5(summary.encode()).hexdigest(),
+        "hash": hashlib.sha256(summary.encode()).hexdigest(),
         "importance": obs.get("context", {}).get("importance") or _IMPORTANCE_MAP.get(tool, 0.3),
         "status": "active",
         "status_updated_at": now,

@@ -150,7 +150,7 @@ def ingest_sessions(
             "user_id": "default",
             "created_at": now,
             "source": "session_summary",
-            "hash": hashlib.md5(summary_text.encode()).hexdigest(),
+            "hash": hashlib.sha256(summary_text.encode()).hexdigest(),
             "importance": 0.7,
             "status": "active",
             "status_updated_at": now,

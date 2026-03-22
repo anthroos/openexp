@@ -138,6 +138,16 @@ TOOLS = [
 ]
 
 
+MAX_CONTENT_LENGTH = 10000
+MAX_SEARCH_LIMIT = 100
+MAX_REFLECT_HOURS = 720  # 30 days
+
+
+def _clamp(value, lo, hi):
+    """Clamp a numeric value to [lo, hi]."""
+    return max(lo, min(hi, value))
+
+
 def handle_request(request: dict) -> dict:
     """Handle a single MCP JSON-RPC request."""
     method = request.get("method")
@@ -158,8 +168,8 @@ def handle_request(request: dict) -> dict:
 
         if tool_name == "search_memory":
             result = direct_search.search_memories(
-                query=args["query"],
-                limit=args.get("limit", 10),
+                query=args["query"][:MAX_CONTENT_LENGTH],
+                limit=_clamp(args.get("limit", 10), 1, MAX_SEARCH_LIMIT),
                 agent_id=args.get("agent"),
                 memory_type=args.get("type"),
                 client_id=args.get("client_id"),
@@ -168,8 +178,11 @@ def handle_request(request: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         elif tool_name == "add_memory":
+            content = args["content"]
+            if len(content) > MAX_CONTENT_LENGTH:
+                return {"content": [{"type": "text", "text": json.dumps({"error": f"Content too long ({len(content)} chars, max {MAX_CONTENT_LENGTH})"})}]}
             result = direct_search.add_memory(
-                content=args["content"],
+                content=content,
                 agent_id=args.get("agent", "main"),
                 memory_type=args.get("type", "fact"),
                 metadata={"source": "mcp"},
@@ -179,9 +192,9 @@ def handle_request(request: dict) -> dict:
 
         elif tool_name == "log_prediction":
             pred_id = reward_tracker.log_prediction(
-                prediction=args["prediction"],
-                confidence=args.get("confidence", 0.5),
-                strategic_value=args.get("strategic_value", 0.5),
+                prediction=args["prediction"][:MAX_CONTENT_LENGTH],
+                confidence=_clamp(args.get("confidence", 0.5), 0.0, 1.0),
+                strategic_value=_clamp(args.get("strategic_value", 0.5), 0.0, 1.0),
                 memory_ids_used=args.get("memory_ids_used", []),
                 client_id=args.get("client_id"),
             )
@@ -190,8 +203,8 @@ def handle_request(request: dict) -> dict:
         elif tool_name == "log_outcome":
             result = reward_tracker.log_outcome(
                 prediction_id=args["prediction_id"],
-                outcome=args["outcome"],
-                reward=args["reward"],
+                outcome=args["outcome"][:MAX_CONTENT_LENGTH],
+                reward=_clamp(args["reward"], -1.0, 1.0),
                 cause_category=args.get("cause_category"),
             )
             q_cache.save_delta(DELTAS_DIR, SESSION_ID)
@@ -199,8 +212,8 @@ def handle_request(request: dict) -> dict:
 
         elif tool_name == "get_agent_context":
             search_result = direct_search.search_memories(
-                query=args["query"],
-                limit=args.get("limit", 10),
+                query=args["query"][:MAX_CONTENT_LENGTH],
+                limit=_clamp(args.get("limit", 10), 1, MAX_SEARCH_LIMIT),
                 client_id=args.get("client_id"),
                 q_cache=q_cache,
             )
@@ -280,10 +293,11 @@ def main():
             }
             print(json.dumps(error_response), flush=True)
         except Exception as e:
+            logger.exception("MCP request failed: %s", e)
             error_response = {
                 "jsonrpc": "2.0",
                 "id": request_id,
-                "error": {"code": -32603, "message": str(e)},
+                "error": {"code": -32603, "message": "Internal error"},
             }
             print(json.dumps(error_response), flush=True)
 

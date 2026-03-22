@@ -3,9 +3,9 @@
 When outcomes resolve, updates Q-values for memories that were used
 in the prediction. This closes the learning loop.
 """
-import fcntl
 import json
 import logging
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -191,12 +191,21 @@ class RewardTracker:
         }
 
     def _rewrite_predictions_file(self):
-        """Rewrite predictions file from in-memory cache. Must be called under lock."""
-        fd = open(self.predictions_file, "w", encoding="utf-8")
+        """Atomically rewrite predictions file from in-memory cache."""
+        import tempfile
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=str(self.predictions_file.parent),
+            prefix=".predictions_",
+            suffix=".tmp",
+        )
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            for p in self._predictions:
-                fd.write(json.dumps(p, ensure_ascii=False) + "\n")
-        finally:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-            fd.close()
+            with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+                for p in self._predictions:
+                    f.write(json.dumps(p, ensure_ascii=False) + "\n")
+            os.replace(tmp_path, str(self.predictions_file))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise

@@ -40,8 +40,9 @@ QUERY="${PROMPT:0:300}"
 
 # --- Search memories ---
 cd "$OPENEXP_DIR"
+export OPENEXP_TMPFILE="$TMPFILE"
 "$PYTHON" -c "
-import json, sys
+import json, sys, os
 sys.path.insert(0, '.')
 from openexp.core.config import Q_CACHE_PATH
 from openexp.core.q_value import QCache
@@ -54,8 +55,9 @@ query = sys.stdin.read().strip()
 if not query:
     sys.exit(1)
 
+tmpfile = os.environ['OPENEXP_TMPFILE']
 context = direct_search.search_memories(query=query, limit=5, q_cache=q)
-json.dump({'context': context}, open('$TMPFILE', 'w'), default=str)
+json.dump({'context': context}, open(tmpfile, 'w'), default=str)
 " <<< "$QUERY" 2>/dev/null
 
 if [ ! -s "$TMPFILE" ]; then

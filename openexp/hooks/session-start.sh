@@ -45,8 +45,9 @@ fi
 
 # --- Search memories ---
 cd "$OPENEXP_DIR"
+export OPENEXP_TMPDIR="$TMPDIR_HOOK"
 "$PYTHON" -c "
-import json, sys
+import json, sys, os
 sys.path.insert(0, '.')
 from openexp.core.config import Q_CACHE_PATH
 from openexp.core.q_value import QCache
@@ -55,11 +56,14 @@ from openexp.core import direct_search
 q = QCache()
 q.load(Q_CACHE_PATH)
 
-query = '''$QUERY'''
+query = sys.stdin.read().strip()
+if not query:
+    sys.exit(1)
 
+tmpdir = os.environ['OPENEXP_TMPDIR']
 context = direct_search.search_memories(query=query, limit=10, q_cache=q)
-json.dump({'context': context}, open('$TMPDIR_HOOK/results.json', 'w'), default=str)
-" 2>/dev/null
+json.dump({'context': context}, open(os.path.join(tmpdir, 'results.json'), 'w'), default=str)
+" <<< "$QUERY" 2>/dev/null
 
 RESULTS_FILE="$TMPDIR_HOOK/results.json"
 if [ ! -f "$RESULTS_FILE" ]; then
