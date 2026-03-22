@@ -3,7 +3,7 @@ import json
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class IngestWatermark:
         self.processed_obs: Set[str] = set()
         self.processed_sessions: Set[str] = set()
         self.stats = {"total_ingested": 0, "total_skipped": 0}
-        self.last_run: str | None = None
+        self.last_run: Optional[str] = None
         self._new_obs_ids: Set[str] = set()
         self._new_sessions: Set[str] = set()
         self._stats_delta: Dict[str, int] = {}

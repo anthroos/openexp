@@ -10,6 +10,9 @@ from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Cached Anthropic client (created once on first use)
+_anthropic_client = None
+
 
 def enrich_memory(content: str) -> Dict[str, Any]:
     """Enrich raw memory content using Claude or defaults.
@@ -26,13 +29,16 @@ def enrich_memory(content: str) -> Dict[str, Any]:
 
 def _enrich_with_anthropic(content: str) -> Dict[str, Any]:
     """Enrich using Anthropic Claude."""
+    global _anthropic_client
     import anthropic
     from .config import ANTHROPIC_API_KEY, ENRICHMENT_MODEL
 
     if not ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    client = _anthropic_client
     prompt = _build_enrichment_prompt(content)
 
     response = client.messages.create(
@@ -72,7 +78,7 @@ def _parse_enrichment_response(response_text: str, original_content: str) -> Dic
     import json
 
     try:
-        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', response_text, re.DOTALL)
         if json_match:
             response_text = json_match.group(0)
 

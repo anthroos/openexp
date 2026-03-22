@@ -110,7 +110,8 @@ def _load_observations(obs_dir: Path) -> List[Dict]:
                 continue
             try:
                 all_obs.append(json.loads(line))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logger.warning("Skipping malformed JSONL line in %s: %s", f, e)
                 continue
     return all_obs
 

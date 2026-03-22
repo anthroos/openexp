@@ -83,6 +83,10 @@ jq -n \
     context: {
       file_path: $file_path
     }
-  }' >> "$OBS_FILE"
+  }' | if command -v flock >/dev/null 2>&1; then
+    flock "$OBS_FILE.lock" tee -a "$OBS_FILE" >/dev/null
+  else
+    cat >> "$OBS_FILE"
+  fi
 
 echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse"}}'

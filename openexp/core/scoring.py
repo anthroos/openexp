@@ -5,6 +5,7 @@ Replaces simple cosine similarity with a weighted composite:
 """
 import math
 from datetime import datetime, timezone
+from typing import Dict, List, Optional
 
 # Base importance by memory type
 TYPE_BOOST = {
@@ -38,7 +39,7 @@ DEFAULT_HALF_LIFE_DAYS = 90.0
 
 def composite_score(
     semantic_similarity: float,
-    created_at: str | None = None,
+    created_at: Optional[str] = None,
     importance: float = 0.8,
     access_count: int = 0,
     memory_type: str = "fact",
@@ -68,8 +69,11 @@ def composite_score(
     return min(max(score, 0.0), 1.0)
 
 
-def score_results(results: list[dict], query_similarity_key: str = "score") -> list[dict]:
-    """Re-score a list of search results using composite scoring."""
+def score_results(results: List[Dict], query_similarity_key: str = "score") -> List[Dict]:
+    """Re-score a list of search results using composite scoring.
+
+    Returns a new sorted list with composite_score added. Does not mutate input.
+    """
     scored = []
     for r in results:
         meta = r.get("metadata", {})
@@ -88,14 +92,13 @@ def score_results(results: list[dict], query_similarity_key: str = "score") -> l
             access_count=meta.get("access_count", 0),
             memory_type=meta.get("type", "fact"),
         )
-        r["composite_score"] = cs
-        scored.append(r)
+        scored.append({**r, "composite_score": cs})
 
     scored.sort(key=lambda x: x["composite_score"], reverse=True)
     return scored
 
 
-def _compute_recency(created_str: str | None, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
+def _compute_recency(created_str: Optional[str] = None, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
     """Compute recency factor from ISO date string using exponential decay."""
     if not created_str:
         return 0.5

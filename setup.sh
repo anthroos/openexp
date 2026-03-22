@@ -90,14 +90,22 @@ else
   fi
   # Wait for Qdrant to be ready
   echo -n "  Waiting for Qdrant..."
+  QDRANT_READY=0
   for i in $(seq 1 30); do
     if curl -sf http://localhost:6333/healthz >/dev/null 2>&1; then
       echo " ready!"
+      QDRANT_READY=1
       break
     fi
     echo -n "."
     sleep 1
   done
+  if [ "$QDRANT_READY" -eq 0 ]; then
+    echo ""
+    echo "  ❌ Qdrant failed to start within 30 seconds."
+    echo "  Check: docker logs openexp-qdrant"
+    exit 1
+  fi
 fi
 echo ""
 

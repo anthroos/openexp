@@ -12,7 +12,6 @@ load_dotenv(_project_root / ".env")
 
 # Data directory for Q-cache, predictions, retrievals
 DATA_DIR = Path(os.getenv("OPENEXP_DATA_DIR", os.path.expanduser("~/.openexp/data")))
-DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # Embedding model (FastEmbed BAAI/bge-small-en-v1.5, 384 dims — local, free, no API key)
 EMBEDDING_MODEL = os.getenv("OPENEXP_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")

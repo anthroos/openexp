@@ -31,6 +31,7 @@ def _init_server():
     from .core import direct_search as _ds
     from .reward_tracker import RewardTracker
 
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     Q_CACHE_PATH = _qcp
     direct_search = _ds
     SESSION_ID = uuid.uuid4().hex[:12]
