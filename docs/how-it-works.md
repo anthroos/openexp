@@ -42,7 +42,15 @@ When you start a new Claude Code session, the SessionStart hook:
    - **30%** Q-value (learned usefulness)
 4. Injects top results as `additionalContext` before Claude sees your prompt
 
-### 3. Q-Learning Reward Loop
+### 3. Session Summary (SessionEnd Hook)
+
+When the session ends, the SessionEnd hook:
+
+1. Generates a markdown summary from the session's observations
+2. Saves it to `~/.openexp/sessions/`
+3. Triggers async ingest + reward computation (runs in background so it doesn't block exit)
+
+### 4. Q-Learning Reward Loop
 
 This is the core innovation. After each session:
 
@@ -59,6 +67,8 @@ Over time, this creates a natural ranking where useful memories (project convent
 
 ## Reward Signals
 
+### Session-Level (Fallback)
+
 | Signal | Reward | Why |
 |--------|--------|-----|
 | `git commit` | +0.3 | Code was shipped |
@@ -70,6 +80,35 @@ Over time, this creates a natural ranking where useful memories (project convent
 | No writes + no commits | -0.1 | Unproductive session |
 | Abandoned (< 3 obs) | -0.05 | Session didn't accomplish anything |
 | Base | -0.1 | Must earn positive |
+
+### Outcome-Based (Primary)
+
+Outcome resolvers detect real business events and reward the specific memories that contributed:
+
+| CRM Transition | Event | Reward |
+|----------------|-------|--------|
+| invoiced → paid | `payment_received` | +1.0 |
+| negotiation → won | `deal_closed` | +0.8 |
+| qualified → proposal | `client_yes` | +0.6 |
+| new → qualified | `meaningful_response` | +0.4 |
+| * → lost | `deal_lost` | -0.5 |
+
+**How it works:**
+
+```
+1. Tag memories with client_id:
+   add_memory("SQUAD prefers Google", client_id="comp-squad")
+
+2. CRM changes detected (deals.csv diff):
+   SQUAD: negotiation → won
+
+3. resolve_outcomes() finds all memories with client_id="comp-squad"
+   → applies reward +0.8 to their Q-values
+
+4. Also resolves pending predictions for comp-squad
+```
+
+This creates targeted, long-horizon rewards that span weeks or months — not just single sessions.
 
 ## Three Q-Layers
 

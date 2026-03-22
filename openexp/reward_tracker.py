@@ -151,9 +151,14 @@ class RewardTracker:
             self._rewrite_predictions_file()
 
         # Update Q-values (outside lock — memory_ids copied inside lock)
+        # All 3 layers get signal: action=full, hypothesis=discounted, fit=asymmetric
         updated_q = {}
         for mem_id in memory_ids:
-            updated_q[mem_id] = self.q_updater.update(mem_id, reward, layer="action")
+            updated_q[mem_id] = self.q_updater.update_all_layers(mem_id, {
+                "action": reward,
+                "hypothesis": reward * 0.8,
+                "fit": reward if reward > 0 else reward * 0.5,
+            })
 
         logger.info(
             "Outcome for %s: reward=%.2f, updated %d memories",

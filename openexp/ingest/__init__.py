@@ -3,10 +3,39 @@
 Public API:
     ingest_session()  — full pipeline: observations + sessions + reward
 """
+import importlib
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _load_configured_resolvers() -> List:
+    """Load outcome resolvers from OPENEXP_OUTCOME_RESOLVERS env var.
+
+    Format: "module:ClassName,module2:ClassName2"
+    Example: "openexp.resolvers.crm_csv:CRMCSVResolver"
+    """
+    from ..core.config import OUTCOME_RESOLVERS
+
+    if not OUTCOME_RESOLVERS:
+        return []
+
+    resolvers = []
+    for entry in OUTCOME_RESOLVERS.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            module_path, class_name = entry.rsplit(":", 1)
+            module = importlib.import_module(module_path)
+            cls = getattr(module, class_name)
+            resolvers.append(cls())
+            logger.info("Loaded outcome resolver: %s", entry)
+        except Exception as e:
+            logger.error("Failed to load resolver %s: %s", entry, e)
+
+    return resolvers
 
 
 def ingest_session(
@@ -56,5 +85,30 @@ def ingest_session(
             result["reward"]["retrieved_memories_rewarded"] = retrieved_updated
         else:
             result["reward"]["retrieved_memories_rewarded"] = 0
+
+    # Run outcome resolvers (CRM stage transitions, etc.)
+    try:
+        resolvers = _load_configured_resolvers()
+        if resolvers:
+            from ..outcome import resolve_outcomes
+            from ..core.config import Q_CACHE_PATH
+            from ..core.q_value import QCache, QValueUpdater
+
+            q_cache = QCache()
+            q_cache.load(Q_CACHE_PATH)
+            q_updater = QValueUpdater(cache=q_cache)
+
+            outcome_result = resolve_outcomes(
+                resolvers=resolvers,
+                q_cache=q_cache,
+                q_updater=q_updater,
+            )
+            result["outcomes"] = outcome_result
+
+            if outcome_result.get("total_events", 0) > 0:
+                q_cache.save(Q_CACHE_PATH)
+    except Exception as e:
+        logger.error("Outcome resolution failed: %s", e)
+        result["outcomes"] = {"error": str(e)}
 
     return result

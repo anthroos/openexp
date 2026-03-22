@@ -179,12 +179,18 @@ SETTINGS=$(echo "$SETTINGS" | jq --arg hooks_dir "$HOOKS_DIR" '
   .hooks.PostToolUse = (.hooks.PostToolUse // []) |
   if any(.[]; .command | contains("openexp")) then . else
     . + [{"type": "command", "command": ($hooks_dir + "/post-tool-use.sh")}]
+  end |
+
+  # SessionEnd hook
+  .hooks.SessionEnd = (.hooks.SessionEnd // []) |
+  if any(.[]; .command | contains("openexp")) then . else
+    . + [{"type": "command", "command": ($hooks_dir + "/session-end.sh"), "timeout": 30}]
   end
 ')
 
 echo "$SETTINGS" | jq '.' > "$CLAUDE_SETTINGS"
 echo "  ✅ MCP server registered"
-echo "  ✅ Hooks registered (SessionStart, UserPromptSubmit, PostToolUse)"
+echo "  ✅ Hooks registered (SessionStart, UserPromptSubmit, PostToolUse, SessionEnd)"
 echo ""
 
 # --- Step 7: Verify ---
