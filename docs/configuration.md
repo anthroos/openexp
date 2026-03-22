@@ -11,6 +11,7 @@ OpenExp uses Qdrant as its vector database. The setup script starts it via Docke
 |----------|---------|-------------|
 | `QDRANT_HOST` | `localhost` | Qdrant server hostname |
 | `QDRANT_PORT` | `6333` | Qdrant HTTP port |
+| `QDRANT_API_KEY` | *(none)* | Optional: enables Qdrant auth (also passed to Docker) |
 | `OPENEXP_COLLECTION` | `openexp_memories` | Collection name in Qdrant |
 
 ## Optional
