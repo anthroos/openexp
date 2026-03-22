@@ -25,7 +25,7 @@
        ▼                 ▼                      ▼
 ┌──────────────────────────────┐    ┌────────────────────┐
 │        OpenExp Core          │    │  Observations Dir  │
-│                              │    │  ~/.claude-memory/ │
+│                              │    │  ~/.openexp/       │
 │  ┌──────────────────────┐   │    │  observations/     │
 │  │   direct_search.py   │   │    └─────────┬──────────┘
 │  │   FastEmbed + Qdrant │   │              │
@@ -98,6 +98,6 @@ Shell scripts registered with Claude Code:
 | Q-value deltas | `~/.openexp/data/deltas/` | Per-session delta files (merged on start) |
 | Predictions | `~/.openexp/data/predictions.jsonl` | Agent predictions for outcome tracking |
 | Retrieval log | `~/.openexp/data/session_retrievals.jsonl` | Which memories were recalled when |
-| Raw observations | `~/.claude-memory/observations/` | JSONL files per day |
-| Session summaries | `~/.claude-memory/sessions/` | Markdown files per session |
+| Raw observations | `~/.openexp/observations/` | JSONL files per day |
+| Session summaries | `~/.openexp/sessions/` | Markdown files per session |
 | Ingest watermark | `~/.openexp/data/ingest_watermark.json` | Processed observation IDs |

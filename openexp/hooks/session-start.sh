@@ -9,7 +9,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OPENEXP_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 PYTHON="$OPENEXP_DIR/.venv/bin/python3"
-SESSIONS_DIR="$HOME/.claude-memory/sessions"
+SESSIONS_DIR="$HOME/.openexp/sessions"
 TMPDIR_HOOK=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_HOOK"' EXIT
 
