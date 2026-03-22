@@ -63,10 +63,18 @@ def apply_session_reward(
         q_cache.load(Q_CACHE_PATH)
 
     updater = QValueUpdater(cache=q_cache)
-    updated = updater.batch_update(point_ids, reward, layer="action")
+    # Update all 3 layers: action=full, hypothesis=discounted, fit=asymmetric
+    layer_rewards = {
+        "action": reward,
+        "hypothesis": reward * 0.8,
+        "fit": reward if reward > 0 else reward * 0.5,
+    }
+    updated = {}
+    for mem_id in point_ids:
+        updated[mem_id] = updater.update_all_layers(mem_id, layer_rewards)
 
     q_cache.save(Q_CACHE_PATH)
-    logger.info("Applied session reward=%.2f to %d memories", reward, len(updated))
+    logger.info("Applied session reward=%.2f to %d memories (all layers)", reward, len(updated))
     return len(updated)
 
 

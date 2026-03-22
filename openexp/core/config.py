@@ -43,3 +43,9 @@ INGEST_BATCH_SIZE = int(os.getenv("OPENEXP_INGEST_BATCH_SIZE", "50"))
 
 # Enrichment model (optional — requires ANTHROPIC_API_KEY)
 ENRICHMENT_MODEL = os.getenv("OPENEXP_ENRICHMENT_MODEL", "claude-haiku-4-5-20251001")
+
+# Outcome resolvers (format: "module:ClassName,module2:ClassName2")
+OUTCOME_RESOLVERS = os.getenv("OPENEXP_OUTCOME_RESOLVERS", "").strip()
+
+# CRM directory for CRMCSVResolver (local path, not checked in)
+CRM_DIR = Path(os.getenv("OPENEXP_CRM_DIR", "")) if os.getenv("OPENEXP_CRM_DIR") else None
