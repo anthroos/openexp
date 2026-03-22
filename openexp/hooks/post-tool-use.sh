@@ -5,7 +5,7 @@
 # for later ingestion into Qdrant via the ingest pipeline.
 set -uo pipefail
 
-OBS_DIR="$HOME/.claude-memory/observations"
+OBS_DIR="$HOME/.openexp/observations"
 mkdir -p "$OBS_DIR"
 
 # Read stdin (Claude Code passes tool call JSON)

@@ -26,7 +26,7 @@ Every time Claude Code uses a tool (writes a file, runs a command, edits code), 
 }
 ```
 
-These observations are written to `~/.claude-memory/observations/` as JSONL files.
+These observations are written to `~/.openexp/observations/` as JSONL files.
 
 ### 2. Memory Retrieval (SessionStart Hook)
 

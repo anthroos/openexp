@@ -19,8 +19,8 @@ OpenExp uses Qdrant as its vector database. The setup script starts it via Docke
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENEXP_DATA_DIR` | `~/.openexp/data` | Q-cache, predictions, retrieval logs |
-| `OPENEXP_OBSERVATIONS_DIR` | `~/.claude-memory/observations` | Where hooks write observations |
-| `OPENEXP_SESSIONS_DIR` | `~/.claude-memory/sessions` | Session summary markdown files |
+| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Where hooks write observations |
+| `OPENEXP_SESSIONS_DIR` | `~/.openexp/sessions` | Session summary markdown files |
 
 ### Embedding Model
 | Variable | Default | Description |

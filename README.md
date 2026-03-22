@@ -180,8 +180,8 @@ All settings via environment variables (`.env`):
 | `QDRANT_PORT` | `6333` | Qdrant server port |
 | `OPENEXP_COLLECTION` | `openexp_memories` | Qdrant collection name |
 | `OPENEXP_DATA_DIR` | `~/.openexp/data` | Q-cache, predictions, retrieval logs |
-| `OPENEXP_OBSERVATIONS_DIR` | `~/.claude-memory/observations` | Where hooks write observations |
-| `OPENEXP_SESSIONS_DIR` | `~/.claude-memory/sessions` | Session summary files |
+| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Where hooks write observations |
+| `OPENEXP_SESSIONS_DIR` | `~/.openexp/sessions` | Session summary files |
 | `OPENEXP_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embedding model (local, free) |
 | `OPENEXP_EMBEDDING_DIM` | `384` | Embedding dimensions |
 | `OPENEXP_INGEST_BATCH_SIZE` | `50` | Batch size for ingestion |
@@ -242,7 +242,7 @@ Only `active` and `confirmed` memories are returned in searches. Status weights 
 PostToolUse hook                                  SessionStart hook
       │                                                 ↑
       ↓                                                 │
-~/.claude-memory/observations/*.jsonl          Qdrant search (top 10)
+~/.openexp/observations/*.jsonl                Qdrant search (top 10)
       │                                          + Q-value reranking
       ↓                                                 ↑
 openexp ingest ──→ FastEmbed ──→ Qdrant ─────────────────┘
