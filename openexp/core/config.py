@@ -23,6 +23,7 @@ Q_CACHE_PATH = DATA_DIR / "q_cache.json"
 # Qdrant
 QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
+QDRANT_API_KEY = os.environ.get("QDRANT_API_KEY", "").strip() or None
 COLLECTION_NAME = os.getenv("OPENEXP_COLLECTION", "openexp_memories")
 
 # API keys (optional — only needed for enrichment/reflection)

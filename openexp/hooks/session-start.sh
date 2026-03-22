@@ -11,6 +11,7 @@ OPENEXP_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 PYTHON="$OPENEXP_DIR/.venv/bin/python3"
 SESSIONS_DIR="$HOME/.openexp/sessions"
 TMPDIR_HOOK=$(mktemp -d)
+chmod 700 "$TMPDIR_HOOK"
 trap 'rm -rf "$TMPDIR_HOOK"' EXIT
 
 # Read stdin (Claude Code passes session JSON)

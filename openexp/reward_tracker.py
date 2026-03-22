@@ -35,8 +35,18 @@ def _append_jsonl(path: Path, data: dict):
         f.write(json.dumps(data, ensure_ascii=False) + "\n")
 
 
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
 def _load_jsonl(path: Path) -> List[dict]:
     if not path.exists():
+        return []
+    try:
+        file_size = path.stat().st_size
+    except OSError:
+        return []
+    if file_size > MAX_FILE_SIZE:
+        logger.warning("JSONL file too large, skipping: %s (%d bytes > %d limit)", path, file_size, MAX_FILE_SIZE)
         return []
     items = []
     with open(path, encoding="utf-8") as f:

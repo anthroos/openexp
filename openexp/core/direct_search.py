@@ -17,6 +17,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
 from .config import (
     QDRANT_HOST,
     QDRANT_PORT,
+    QDRANT_API_KEY,
     COLLECTION_NAME,
     EMBEDDING_MODEL,
 )
@@ -46,7 +47,7 @@ def _get_qdrant() -> QdrantClient:
     if _qdrant is None:
         with _init_lock:
             if _qdrant is None:
-                _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+                _qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, api_key=QDRANT_API_KEY)
     return _qdrant
 
 
