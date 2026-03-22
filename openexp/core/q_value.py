@@ -3,7 +3,7 @@
 Q-learning on episodic memory: memories that lead to productive sessions
 get higher Q-values and are prioritized in future retrieval.
 
-Q-update formula: Q_new = (1 - alpha) * Q_old + alpha * reward
+Q-update formula: Q_new = clamp(Q_old + alpha * reward, q_floor, q_ceiling)
 Scoring formula: z_norm(sim) * w_sim + z_norm(q) * w_q
 """
 import fcntl
@@ -21,11 +21,12 @@ logger = logging.getLogger(__name__)
 
 # Q-learning defaults
 DEFAULT_Q_CONFIG = {
-    "alpha": 0.25,          # learning rate
+    "alpha": 0.25,          # learning rate (additive increment per reward)
     "gamma": 0.0,           # discount factor (single-step, no lookahead)
     "epsilon": 0.1,          # exploration probability
-    "q_init": 0.5,           # initial Q-value for new memories
+    "q_init": 0.0,           # initial Q-value for new memories (earn value from zero)
     "q_floor": -0.5,         # minimum Q-value
+    "q_ceiling": 1.0,        # maximum Q-value
     "w_sim": 0.5,            # weight for similarity in combined score
     "w_q": 0.3,              # weight for Q-value in combined score
     "w_recency": 0.1,        # weight for recency
@@ -157,7 +158,7 @@ class QValueUpdater:
 
     def __init__(self, config: Optional[Dict] = None, cache: Optional[QCache] = None):
         self.cfg = {**DEFAULT_Q_CONFIG, **(config or {})}
-        self.cache = cache or QCache()
+        self.cache = cache if cache is not None else QCache()
 
     def update(
         self,
@@ -166,20 +167,26 @@ class QValueUpdater:
         layer: str = "action",
         next_max_q: Optional[float] = None,
     ) -> Dict[str, float]:
-        """Apply Q-learning update to a specific Q-layer."""
+        """Apply additive Q-learning update to a specific Q-layer.
+
+        Formula: Q_new = clamp(Q_old + alpha * reward, q_floor, q_ceiling)
+        Each positive reward ADDS to Q-value; each negative SUBTRACTS.
+        """
         alpha = self.cfg["alpha"]
         gamma = self.cfg["gamma"]
         q_floor = self.cfg["q_floor"]
+        q_ceiling = self.cfg.get("q_ceiling", 1.0)
 
         q_data = self.cache.get(memory_id) or self._default_q_data()
         target = float(reward) + gamma * float(next_max_q or 0.0)
 
         layer_key = f"q_{layer}"
         old_q = q_data.get(layer_key, self.cfg["q_init"])
-        new_q = (1.0 - alpha) * old_q + alpha * target
+        new_q = old_q + alpha * target
 
         if q_floor is not None:
             new_q = max(q_floor, new_q)
+        new_q = min(q_ceiling, new_q)
 
         q_data[layer_key] = new_q
         q_data["q_value"] = self._combined_q(q_data)
@@ -196,17 +203,19 @@ class QValueUpdater:
         memory_id: str,
         rewards: Dict[str, float],
     ) -> Dict[str, float]:
-        """Update multiple Q-layers at once."""
+        """Update multiple Q-layers at once (additive)."""
         q_data = self.cache.get(memory_id) or self._default_q_data()
+        q_ceiling = self.cfg.get("q_ceiling", 1.0)
 
         for layer, reward in rewards.items():
             if layer in Q_LAYERS:
                 layer_key = f"q_{layer}"
                 old_q = q_data.get(layer_key, self.cfg["q_init"])
                 target = float(reward)
-                new_q = (1.0 - self.cfg["alpha"]) * old_q + self.cfg["alpha"] * target
+                new_q = old_q + self.cfg["alpha"] * target
                 if self.cfg["q_floor"] is not None:
                     new_q = max(self.cfg["q_floor"], new_q)
+                new_q = min(q_ceiling, new_q)
                 q_data[layer_key] = new_q
 
         q_data["q_value"] = self._combined_q(q_data)
@@ -257,7 +266,7 @@ class QValueScorer:
 
     def __init__(self, config: Optional[Dict] = None, cache: Optional[QCache] = None):
         self.cfg = {**DEFAULT_Q_CONFIG, **(config or {})}
-        self.cache = cache or QCache()
+        self.cache = cache if cache is not None else QCache()
 
     def rerank(
         self,

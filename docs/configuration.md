@@ -42,6 +42,20 @@ Without `ANTHROPIC_API_KEY`, memories are stored with basic metadata. The system
 |----------|---------|-------------|
 | `OPENEXP_INGEST_BATCH_SIZE` | `50` | Observations per batch during ingest |
 
+### Outcome Resolvers
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENEXP_OUTCOME_RESOLVERS` | *(none)* | Comma-separated list of `module:ClassName` resolvers |
+| `OPENEXP_CRM_DIR` | *(none)* | Path to CRM directory (for `CRMCSVResolver`) |
+
+Example `.env` for CRM outcome resolution:
+```
+OPENEXP_OUTCOME_RESOLVERS=openexp.resolvers.crm_csv:CRMCSVResolver
+OPENEXP_CRM_DIR=/path/to/your/crm
+```
+
+The CRM directory should contain `relationships/deals.csv` and `relationships/leads.csv`.
+
 ## Claude Code Integration
 
 The setup script registers OpenExp in `~/.claude/settings.local.json`:
@@ -71,6 +85,9 @@ The setup script registers OpenExp in `~/.claude/settings.local.json`:
     ],
     "PostToolUse": [
       {"type": "command", "command": "/path/to/openexp/openexp/hooks/post-tool-use.sh"}
+    ],
+    "SessionEnd": [
+      {"type": "command", "command": "/path/to/openexp/openexp/hooks/session-end.sh", "timeout": 30}
     ]
   }
 }
