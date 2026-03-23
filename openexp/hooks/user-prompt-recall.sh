@@ -91,11 +91,17 @@ if [ -n "$ALL_IDS" ] && [ "$SESSION_ID" != "unknown" ]; then
 fi
 
 # --- Build output using jq for safe string handling ---
+REMINDER=""
+if [ "$PROMPT_LEN" -gt 30 ]; then
+  REMINDER="\n\nREMINDER: Before starting this task, call search_memory with a targeted query. Hooks recalled the above automatically, but you must also do a manual targeted search for complex tasks."
+fi
+
 jq -n \
   --arg context "$CONTEXT_TEXT" \
+  --arg reminder "$REMINDER" \
   '{
     hookSpecificOutput: {
       hookEventName: "UserPromptSubmit",
-      additionalContext: ("## Recall: Context\n" + $context + "\n")
+      additionalContext: ("## Recall: Context\n" + $context + $reminder + "\n")
     }
   }'
