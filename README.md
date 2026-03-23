@@ -7,6 +7,13 @@
 </p>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
+  <a href="https://arxiv.org/abs/2603.07360"><img src="https://img.shields.io/badge/arXiv-2603.07360-b31b1b.svg" alt="arXiv"></a>
+  <img src="https://img.shields.io/badge/Made_for-Claude_Code-blueviolet" alt="Made for Claude Code">
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#mcp-tools">MCP Tools</a> &middot;
@@ -63,6 +70,20 @@ This creates a much stronger learning signal than "did this session have git com
 
 After a few sessions, OpenExp learns what context actually helps you get work done.
 
+## Why OpenExp?
+
+| Feature | OpenExp | Mem0 | Zep/Graphiti | LangMem |
+|---------|---------|------|-------------|---------|
+| **Q-learning on memories** | Yes — memories earn/lose rank from session outcomes | No | No | No |
+| **Closed-loop rewards** | Session productivity → Q-value updates automatically | No | No | No |
+| **Outcome-based rewards** | Real business events (CRM, deployments) → targeted rewards | No | No | No |
+| **Claude Code native** | Zero-config hooks, works out of the box | Requires integration | Requires integration | Requires integration |
+| **Local-first** | Qdrant + FastEmbed, no cloud, no API key for core | Cloud API | Cloud or self-hosted | Cloud API |
+| **Hybrid retrieval** | BM25 + vector + recency + importance + Q-value (5 signals) | Vector only | Graph + vector | Vector only |
+| **Privacy** | All data stays on your machine | Data sent to cloud | Depends on setup | Data sent to cloud |
+
+**The key difference:** other memory tools store and retrieve. OpenExp **learns which memories actually help you get work done** — and surfaces those first next time.
+
 ## Quick Start
 
 ```bash
@@ -72,6 +93,9 @@ cd openexp
 ```
 
 That's it. Open Claude Code in any project — it now has memory.
+
+> [!TIP]
+> No API key needed for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional — it enables auto-enrichment (type classification, tags, validity windows) but everything works great without it.
 
 **Prerequisites:** Python 3.11+, Docker, jq
 
@@ -309,6 +333,19 @@ This project is in early stages. Key areas where help is welcome:
 OpenExp implements value-driven memory retrieval inspired by [MemRL](https://arxiv.org/abs/2404.09560), adapted for episodic memory in AI coding assistants.
 
 Core insight: treating memory retrieval as a reinforcement learning problem — where the reward signal comes from real session outcomes — produces better context selection than similarity-only search.
+
+## Citation
+
+If you use OpenExp in your research, please cite:
+
+```bibtex
+@article{pasichnyk2025yerkes,
+  title={The Yerkes-Dodson Curve for AI Agents: Optimal Pressure in Multi-Agent Survival Games},
+  author={Pasichnyk, Ivan},
+  journal={arXiv preprint arXiv:2603.07360},
+  year={2026}
+}
+```
 
 ## License
 
