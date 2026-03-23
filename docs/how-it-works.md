@@ -97,15 +97,15 @@ Outcome resolvers detect real business events and reward the specific memories t
 
 ```
 1. Tag memories with client_id:
-   add_memory("SQUAD prefers Google", client_id="comp-squad")
+   add_memory("Acme prefers Google", client_id="comp-acme")
 
 2. CRM changes detected (deals.csv diff):
-   SQUAD: negotiation → won
+   Acme: negotiation → won
 
-3. resolve_outcomes() finds all memories with client_id="comp-squad"
+3. resolve_outcomes() finds all memories with client_id="comp-acme"
    → applies reward +0.8 to their Q-values
 
-4. Also resolves pending predictions for comp-squad
+4. Also resolves pending predictions for comp-acme
 ```
 
 This creates targeted, long-horizon rewards that span weeks or months — not just single sessions.

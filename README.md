@@ -18,7 +18,8 @@
   <a href="#how-it-works">How It Works</a> &middot;
   <a href="#mcp-tools">MCP Tools</a> &middot;
   <a href="#configuration">Configuration</a> &middot;
-  <a href="#architecture">Architecture</a>
+  <a href="#architecture">Architecture</a> &middot;
+  <a href="#contributing">Contributing</a>
 </p>
 
 ---
@@ -57,13 +58,13 @@ Next session → better memories surface first
 Beyond session-level heuristics, OpenExp supports **outcome-based rewards** from real business events. When a CRM deal moves from "negotiation" to "won", the memories tagged with that client get rewarded — even if the deal took weeks to close.
 
 ```
-add_memory(content="SQUAD prefers Google stack", client_id="comp-squad")
+add_memory(content="Acme prefers Google stack", client_id="comp-acme")
     ↓
 ... weeks of work ...
     ↓
-CRM: SQUAD deal moves negotiation → won
+CRM: Acme deal moves negotiation → won
     ↓
-resolve_outcomes → finds memories tagged comp-squad → reward +0.8
+resolve_outcomes → finds memories tagged comp-acme → reward +0.8
 ```
 
 This creates a much stronger learning signal than "did this session have git commits?"
@@ -318,9 +319,48 @@ Q-Cache (q_cache.json) ←── reward signal ←── session productivity
 | **Transport** | MCP STDIO (JSON-RPC 2.0) | Native Claude Code integration |
 | **Hooks** | Bash scripts | Minimal dependencies, shell-level integration |
 
+## Troubleshooting
+
+**Docker / Qdrant won't start:**
+```bash
+# Check Docker is running
+docker info
+
+# Check Qdrant container
+docker ps -a | grep openexp-qdrant
+docker logs openexp-qdrant
+```
+
+**Hooks not firing:**
+```bash
+# Verify hooks are registered
+cat ~/.claude/settings.local.json | jq '.hooks'
+
+# Re-run setup to fix registration
+./setup.sh
+```
+
+**No memories appearing:**
+Memories need to be ingested first. After a few Claude Code sessions:
+```bash
+openexp ingest --dry-run   # preview what will be ingested
+openexp ingest             # ingest into Qdrant
+openexp stats              # check Q-cache state
+```
+
+## Documentation
+
+Detailed docs are available in the [`docs/`](docs/) directory:
+
+- [How It Works](docs/how-it-works.md) — full explanation of the learning loop
+- [Architecture](docs/architecture.md) — system design and data flow
+- [Configuration](docs/configuration.md) — all environment variables and options
+
 ## Contributing
 
-This project is in early stages. Key areas where help is welcome:
+This project is in early stages. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow.
+
+Key areas where help is welcome:
 
 - **Reward signals** — beyond commits/PRs, what indicates a productive session?
 - **Compaction** — merging duplicate or outdated memories automatically
@@ -339,11 +379,12 @@ Core insight: treating memory retrieval as a reinforcement learning problem — 
 If you use OpenExp in your research, please cite:
 
 ```bibtex
-@article{pasichnyk2025yerkes,
+@article{pasichnyk2026yerkes,
   title={The Yerkes-Dodson Curve for AI Agents: Optimal Pressure in Multi-Agent Survival Games},
   author={Pasichnyk, Ivan},
   journal={arXiv preprint arXiv:2603.07360},
-  year={2026}
+  year={2026},
+  url={https://arxiv.org/abs/2603.07360}
 }
 ```
 
