@@ -91,10 +91,7 @@ if [ -n "$ALL_IDS" ] && [ "$SESSION_ID" != "unknown" ]; then
 fi
 
 # --- Build output using jq for safe string handling ---
-REMINDER=""
-if [ "$PROMPT_LEN" -gt 30 ]; then
-  REMINDER="\n\nREMINDER: Before starting this task, call search_memory with a targeted query. Hooks recalled the above automatically, but you must also do a manual targeted search for complex tasks."
-fi
+REMINDER="\n\nREMINDER: Before starting this task, call search_memory with a targeted query. Hooks recalled the above automatically, but you must also do a manual targeted search for complex tasks."
 
 jq -n \
   --arg context "$CONTEXT_TEXT" \
