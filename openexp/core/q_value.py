@@ -5,11 +5,16 @@ get higher Q-values and are prioritized in future retrieval.
 
 Q-update formula: Q_new = clamp(Q_old + alpha * reward, q_floor, q_ceiling)
 Scoring formula: z_norm(sim) * w_sim + z_norm(q) * w_q
+
+Per-experience Q-values: the same memory can have different Q-values
+under different experiences (e.g., "default", "sales", "coding").
+Cache format: {memory_id: {experience_name: {q_value, q_action, ...}, ...}}
 """
 import fcntl
 import json
 import logging
 import random
+import shutil
 import statistics
 from collections import OrderedDict
 from datetime import datetime, timezone
@@ -45,6 +50,15 @@ DEFAULT_Q_CONFIG = {
 Q_LAYERS = ("action", "hypothesis", "fit")
 
 
+def compute_layer_rewards(reward: float) -> Dict[str, float]:
+    """Compute per-layer rewards: action=full, hypothesis=discounted, fit=asymmetric."""
+    return {
+        "action": reward,
+        "hypothesis": reward * 0.8,
+        "fit": reward if reward > 0 else reward * 0.5,
+    }
+
+
 def _is_newer(candidate: Dict, existing: Dict) -> bool:
     """Return True if candidate has a more recent q_updated_at than existing."""
     c_ts = candidate.get("q_updated_at", "")
@@ -56,29 +70,90 @@ def _is_newer(candidate: Dict, existing: Dict) -> bool:
     return c_ts > e_ts
 
 
+def _is_flat_format(data: dict) -> bool:
+    """Detect whether Q-cache is in old flat format.
+
+    Flat format: {mem_id: {q_value: ..., q_action: ..., ...}}
+    Nested format: {mem_id: {experience_name: {q_value: ..., ...}, ...}}
+
+    Heuristic: if the first entry's value has a "q_value" key directly,
+    it's flat format. If the first key maps to another dict that contains
+    experience names, it's nested.
+    """
+    if not data:
+        return False
+    first_value = next(iter(data.values()))
+    if not isinstance(first_value, dict):
+        return False
+    # Flat format has q_value directly in the value dict
+    return "q_value" in first_value
+
+
+def _migrate_flat_to_nested(data: dict) -> dict:
+    """Wrap each flat entry under the "default" experience key."""
+    return {mem_id: {"default": q_data} for mem_id, q_data in data.items()}
+
+
 class QCache:
-    """Fast in-memory Q-value cache with LRU eviction."""
+    """Fast in-memory Q-value cache with LRU eviction.
+
+    Stores per-experience Q-values:
+    {memory_id: {experience: {q_value, q_action, ...}, ...}}
+    """
 
     def __init__(self, max_size: int = 100_000):
-        self._cache: OrderedDict[str, Dict[str, float]] = OrderedDict()
+        self._cache: OrderedDict[str, Dict[str, Dict[str, float]]] = OrderedDict()
         self._max_size = max_size
         self._dirty: Dict[str, Dict] = {}
+        self._migrated = False
 
-    def get(self, memory_id: str) -> Optional[Dict[str, float]]:
+    def get(self, memory_id: str, experience: str = "default") -> Optional[Dict[str, float]]:
+        """Get Q-data for a memory under a specific experience."""
         if memory_id in self._cache:
             self._cache.move_to_end(memory_id)
-            return self._cache[memory_id]
+            return self._cache[memory_id].get(experience)
         return None
 
-    def set(self, memory_id: str, q_data: Dict[str, float]):
-        self._cache[memory_id] = q_data
+    def set(self, memory_id: str, q_data: Dict[str, float], experience: str = "default"):
+        """Set Q-data for a memory under a specific experience."""
+        if memory_id not in self._cache:
+            self._cache[memory_id] = {}
+        self._cache[memory_id][experience] = q_data
         self._cache.move_to_end(memory_id)
-        self._dirty[memory_id] = q_data
+
+        if memory_id not in self._dirty:
+            self._dirty[memory_id] = {}
+        self._dirty[memory_id][experience] = q_data
+
         while len(self._cache) > self._max_size:
             self._cache.popitem(last=False)
 
-    def get_all_q_values(self) -> List[float]:
-        return [d.get("q_value", DEFAULT_Q_CONFIG["q_init"]) for d in self._cache.values()]
+    def get_all_q_values(self, experience: str = "default") -> List[float]:
+        """Get all Q-values for a specific experience."""
+        values = []
+        for mem_data in self._cache.values():
+            exp_data = mem_data.get(experience)
+            if exp_data:
+                values.append(exp_data.get("q_value", DEFAULT_Q_CONFIG["q_init"]))
+        return values
+
+    def get_experiences_for_memory(self, memory_id: str) -> List[str]:
+        """List experiences that have Q-data for this memory."""
+        if memory_id in self._cache:
+            return list(self._cache[memory_id].keys())
+        return []
+
+    def get_experience_stats(self, experience: str = "default") -> Dict[str, Any]:
+        """Get stats for a specific experience across all memories."""
+        q_values = self.get_all_q_values(experience)
+        if not q_values:
+            return {"count": 0, "mean": 0.0, "min": 0.0, "max": 0.0}
+        return {
+            "count": len(q_values),
+            "mean": round(sum(q_values) / len(q_values), 4),
+            "min": round(min(q_values), 4),
+            "max": round(max(q_values), 4),
+        }
 
     def __len__(self):
         return len(self._cache)
@@ -96,6 +171,21 @@ class QCache:
             except (json.JSONDecodeError, OSError) as e:
                 logger.warning("Failed to load Q-cache from %s: %s", path, e)
                 return
+
+            # Auto-migrate flat format to nested
+            if _is_flat_format(data):
+                logger.info("Detected flat Q-cache format, migrating to nested (per-experience)")
+                # Backup original
+                backup_path = path.with_suffix(".json.bak")
+                if not backup_path.exists():
+                    try:
+                        shutil.copy2(path, backup_path)
+                        logger.info("Backed up original Q-cache to %s", backup_path)
+                    except OSError as e:
+                        logger.warning("Failed to backup Q-cache: %s", e)
+                data = _migrate_flat_to_nested(data)
+                self._migrated = True
+
             for k, v in data.items():
                 self._cache[k] = v
                 self._cache.move_to_end(k)
@@ -129,19 +219,31 @@ class QCache:
                 for delta_file in sorted(deltas_dir.glob("q_delta_*.json")):
                     try:
                         delta_data = json.loads(delta_file.read_text())
-                        for mem_id, q_data in delta_data.items():
-                            existing = self.get(mem_id)
-                            if existing is None or _is_newer(q_data, existing):
-                                self._cache[mem_id] = q_data
-                                self._cache.move_to_end(mem_id)
-                                while len(self._cache) > self._max_size:
-                                    self._cache.popitem(last=False)
+
+                        # Auto-migrate delta if flat
+                        if _is_flat_format(delta_data):
+                            delta_data = _migrate_flat_to_nested(delta_data)
+
+                        for mem_id, exp_dict in delta_data.items():
+                            if mem_id not in self._cache:
+                                self._cache[mem_id] = {}
+                            for exp_name, q_data in exp_dict.items():
+                                existing = self._cache[mem_id].get(exp_name)
+                                if existing is None or _is_newer(q_data, existing):
+                                    self._cache[mem_id][exp_name] = q_data
+                            self._cache.move_to_end(mem_id)
+                            while len(self._cache) > self._max_size:
+                                self._cache.popitem(last=False)
                         delta_file.unlink()
                         merged_any = True
                     except (json.JSONDecodeError, OSError) as e:
                         logger.warning("Failed to merge delta %s: %s", delta_file, e)
                 if merged_any:
                     self.save(path)
+            if self._migrated:
+                if not merged_any:
+                    self.save(path)
+                self._migrated = False
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             lock_fd.close()
@@ -164,6 +266,7 @@ class QValueUpdater:
         reward: float,
         layer: str = "action",
         next_max_q: Optional[float] = None,
+        experience: str = "default",
     ) -> Dict[str, float]:
         """Apply additive Q-learning update to a specific Q-layer.
 
@@ -175,7 +278,7 @@ class QValueUpdater:
         q_floor = self.cfg["q_floor"]
         q_ceiling = self.cfg.get("q_ceiling", 1.0)
 
-        q_data = self.cache.get(memory_id) or self._default_q_data()
+        q_data = self.cache.get(memory_id, experience) or self._default_q_data()
         target = float(reward) + gamma * float(next_max_q or 0.0)
 
         layer_key = f"q_{layer}"
@@ -193,16 +296,17 @@ class QValueUpdater:
         q_data["last_layer_updated"] = layer
         q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        self.cache.set(memory_id, q_data)
+        self.cache.set(memory_id, q_data, experience)
         return q_data
 
     def update_all_layers(
         self,
         memory_id: str,
         rewards: Dict[str, float],
+        experience: str = "default",
     ) -> Dict[str, float]:
         """Update multiple Q-layers at once (additive)."""
-        q_data = self.cache.get(memory_id) or self._default_q_data()
+        q_data = self.cache.get(memory_id, experience) or self._default_q_data()
         q_ceiling = self.cfg.get("q_ceiling", 1.0)
 
         for layer, reward in rewards.items():
@@ -220,7 +324,7 @@ class QValueUpdater:
         q_data["q_visits"] = q_data.get("q_visits", 0) + 1
         q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
 
-        self.cache.set(memory_id, q_data)
+        self.cache.set(memory_id, q_data, experience)
         return q_data
 
     def batch_update(
@@ -228,11 +332,12 @@ class QValueUpdater:
         memory_ids: List[str],
         reward: float,
         layer: str = "action",
+        experience: str = "default",
     ) -> Dict[str, Dict[str, float]]:
         """Update Q-values for a batch of memories with the same reward."""
         results = {}
         for mem_id in memory_ids:
-            results[mem_id] = self.update(mem_id, reward, layer)
+            results[mem_id] = self.update(mem_id, reward, layer, experience=experience)
         return results
 
     def _combined_q(self, q_data: Dict[str, float]) -> float:
@@ -270,6 +375,7 @@ class QValueScorer:
         self,
         candidates: List[Dict[str, Any]],
         top_k: int = 5,
+        experience: str = "default",
     ) -> List[Dict[str, Any]]:
         """Re-rank candidates using hybrid similarity + Q-value scoring."""
         if not candidates:
@@ -280,7 +386,7 @@ class QValueScorer:
             c_copy = c.copy()
             mem_id = c.get("id", c.get("memory_id", ""))
 
-            q_data = self.cache.get(str(mem_id))
+            q_data = self.cache.get(str(mem_id), experience)
             if q_data is None:
                 meta = c.get("metadata", {})
                 q_data = {

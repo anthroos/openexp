@@ -15,7 +15,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from .core.config import COLLECTION_NAME
 from .core.direct_search import _get_qdrant
-from .core.q_value import QCache, QValueUpdater
+from .core.q_value import QCache, QValueUpdater, compute_layer_rewards
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +97,7 @@ def resolve_outcomes(
     reward_tracker: Optional[Any] = None,
     q_cache: Optional[QCache] = None,
     q_updater: Optional[QValueUpdater] = None,
+    experience: str = "default",
 ) -> Dict[str, Any]:
     """Run all outcome resolvers and apply rewards.
 
@@ -156,12 +157,9 @@ def resolve_outcomes(
         # 2. Find and reward tagged memories
         memory_ids = _find_memories_for_entity(event.entity_id)
         if memory_ids and q_updater:
+            layer_rewards = compute_layer_rewards(event.reward)
             for mem_id in memory_ids:
-                q_updater.update_all_layers(mem_id, {
-                    "action": event.reward,
-                    "hypothesis": event.reward * 0.8,
-                    "fit": event.reward if event.reward > 0 else event.reward * 0.5,
-                })
+                q_updater.update_all_layers(mem_id, layer_rewards, experience=experience)
             total_memories_rewarded += len(memory_ids)
             logger.info(
                 "Event %s for %s: rewarded %d memories (reward=%.2f)",

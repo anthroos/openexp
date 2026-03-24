@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .core.q_value import QValueUpdater, QCache
+from .core.q_value import QValueUpdater, QCache, compute_layer_rewards
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +68,14 @@ class RewardTracker:
         data_dir: Path,
         q_updater: Optional[QValueUpdater] = None,
         q_cache: Optional[QCache] = None,
+        experience: str = "default",
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         self.predictions_file = self.data_dir / "predictions.jsonl"
         self.outcomes_file = self.data_dir / "outcomes.jsonl"
+        self.experience = experience
 
         self.q_cache = q_cache or QCache()
         self.q_updater = q_updater or QValueUpdater(cache=self.q_cache)
@@ -151,14 +153,10 @@ class RewardTracker:
             self._rewrite_predictions_file()
 
         # Update Q-values (outside lock — memory_ids copied inside lock)
-        # All 3 layers get signal: action=full, hypothesis=discounted, fit=asymmetric
         updated_q = {}
+        layer_rewards = compute_layer_rewards(reward)
         for mem_id in memory_ids:
-            updated_q[mem_id] = self.q_updater.update_all_layers(mem_id, {
-                "action": reward,
-                "hypothesis": reward * 0.8,
-                "fit": reward if reward > 0 else reward * 0.5,
-            })
+            updated_q[mem_id] = self.q_updater.update_all_layers(mem_id, layer_rewards, experience=self.experience)
 
         logger.info(
             "Outcome for %s: reward=%.2f, updated %d memories",

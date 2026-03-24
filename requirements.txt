@@ -1,5 +1,6 @@
 qdrant-client>=1.13.0
 fastembed>=0.4.0
 python-dotenv>=1.0.0
+pyyaml>=6.0
 # Optional: for LLM-based enrichment (auto-categorization of memories)
 # anthropic>=0.45.0
