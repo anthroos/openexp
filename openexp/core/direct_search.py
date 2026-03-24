@@ -67,6 +67,7 @@ def search_memories(
     client_id: Optional[str] = None,
     include_deleted: bool = False,
     q_cache: Optional[QCache] = None,
+    experience: str = "default",
 ) -> Dict[str, Any]:
     """Search memories via direct Qdrant + FastEmbed.
 
@@ -131,7 +132,7 @@ def search_memories(
 
         q_fallback = DEFAULT_Q_CONFIG["q_init"]
         if q_cache:
-            q_data = q_cache.get(str(point.id))
+            q_data = q_cache.get(str(point.id), experience)
             if q_data:
                 record["q_value"] = q_data.get("q_value", q_fallback)
                 record["q_data"] = q_data
@@ -159,6 +160,7 @@ def add_memory(
     memory_type: str = "fact",
     metadata: Optional[dict] = None,
     q_cache: Optional[QCache] = None,
+    experience: str = "default",
 ) -> Dict[str, Any]:
     """Add a memory directly to Qdrant with FastEmbed embedding.
 
@@ -239,7 +241,7 @@ def add_memory(
             "q_hypothesis": q_init,
             "q_fit": q_init,
             "q_visits": 0,
-        })
+        }, experience=experience)
 
     return {
         "status": "ok",

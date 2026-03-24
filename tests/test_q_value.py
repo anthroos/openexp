@@ -132,3 +132,32 @@ def test_is_newer():
     assert _is_newer({"q_updated_at": "2026-01-01"}, {"q_updated_at": "2026-01-02"}) is False
     assert _is_newer({}, {"q_updated_at": "2026-01-01"}) is False  # no timestamp = not newer
     assert _is_newer({"q_updated_at": "2026-01-01"}, {}) is True
+
+
+def test_q_updater_with_experience():
+    """Verify updater respects experience parameter."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+
+    updater.update("mem1", reward=0.8, experience="default")
+    updater.update("mem1", reward=0.3, experience="sales")
+
+    default_q = cache.get("mem1", "default")["q_value"]
+    sales_q = cache.get("mem1", "sales")["q_value"]
+    assert default_q != sales_q
+
+
+def test_q_scorer_rerank_with_experience():
+    """Verify scorer uses experience-specific Q-values."""
+    cache = QCache()
+    cache.set("mem1", {"q_value": 0.9, "q_action": 0.9, "q_hypothesis": 0.9, "q_fit": 0.9}, "sales")
+    cache.set("mem1", {"q_value": 0.1, "q_action": 0.1, "q_hypothesis": 0.1, "q_fit": 0.1}, "default")
+
+    scorer = QValueScorer(cache=cache)
+    candidates = [{"id": "mem1", "score": 0.5}]
+
+    sales_result = scorer.rerank(candidates, top_k=1, experience="sales")
+    default_result = scorer.rerank(candidates, top_k=1, experience="default")
+
+    assert sales_result[0]["q_estimate"] == 0.9
+    assert default_result[0]["q_estimate"] == 0.1

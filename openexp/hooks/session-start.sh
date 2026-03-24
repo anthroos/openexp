@@ -47,6 +47,8 @@ fi
 # --- Search memories ---
 cd "$OPENEXP_DIR"
 export OPENEXP_TMPDIR="$TMPDIR_HOOK"
+# Propagate experience (defaults to "default" if unset)
+EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
 "$PYTHON" -c "
 import json, sys, os
 sys.path.insert(0, '.')
@@ -62,7 +64,8 @@ if not query:
     sys.exit(1)
 
 tmpdir = os.environ['OPENEXP_TMPDIR']
-context = direct_search.search_memories(query=query, limit=10, q_cache=q)
+experience = os.environ.get('OPENEXP_EXPERIENCE', 'default')
+context = direct_search.search_memories(query=query, limit=10, q_cache=q, experience=experience)
 json.dump({'context': context}, open(os.path.join(tmpdir, 'results.json'), 'w'), default=str)
 " <<< "$QUERY" 2>/dev/null
 

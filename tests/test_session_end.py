@@ -128,10 +128,10 @@ class TestRewardRetrievedMemories:
 
         assert updated == 2
 
-        # Verify Q-values changed
+        # Verify Q-values changed (nested format: mem_id -> experience -> q_data)
         q_data = json.loads(q_cache_path.read_text())
-        assert q_data["mem-a"]["q_action"] != 0.0  # updated by reward
-        assert q_data["mem-b"]["q_action"] != 0.0
+        assert q_data["mem-a"]["default"]["q_action"] != 0.0  # updated by reward
+        assert q_data["mem-b"]["default"]["q_action"] != 0.0
 
     def test_no_retrievals_no_update(self, tmp_path):
         """If no retrievals for session, returns 0."""

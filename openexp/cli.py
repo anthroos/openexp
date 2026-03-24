@@ -6,6 +6,9 @@ Usage:
     python3 -m openexp.cli search -q "project context" -n 3
     python3 -m openexp.cli ingest --dry-run
     python3 -m openexp.cli stats
+    python3 -m openexp.cli experience list
+    python3 -m openexp.cli experience show sales
+    python3 -m openexp.cli experience stats
 """
 import argparse
 import json
@@ -19,6 +22,14 @@ MAX_QUERY_LENGTH = 2000
 MAX_MEMORY_IDS = 100
 
 
+def _get_experience_name(args) -> str:
+    """Get experience name from args or env."""
+    if hasattr(args, "experience") and args.experience:
+        return args.experience
+    from .core.config import ACTIVE_EXPERIENCE
+    return ACTIVE_EXPERIENCE
+
+
 def cmd_search(args):
     """Search memories via direct Qdrant + FastEmbed."""
     if len(args.query) > MAX_QUERY_LENGTH:
@@ -29,6 +40,8 @@ def cmd_search(args):
     from .core.q_value import QCache
     from .core import direct_search
 
+    experience = _get_experience_name(args)
+
     q_cache = QCache()
     q_cache.load(Q_CACHE_PATH)
 
@@ -38,6 +51,7 @@ def cmd_search(args):
         memory_type=getattr(args, "type", None),
         exclude_type=getattr(args, "exclude_type", None),
         q_cache=q_cache,
+        experience=experience,
     )
 
     if args.format == "text":
@@ -107,6 +121,8 @@ def cmd_resolve(args):
     from .ingest import _load_configured_resolvers
     from .outcome import resolve_outcomes
 
+    experience = _get_experience_name(args)
+
     resolvers = _load_configured_resolvers()
     if not resolvers:
         print("No outcome resolvers configured. Set OPENEXP_OUTCOME_RESOLVERS in .env")
@@ -120,6 +136,7 @@ def cmd_resolve(args):
         resolvers=resolvers,
         q_cache=q_cache,
         q_updater=q_updater,
+        experience=experience,
     )
 
     if result.get("total_events", 0) > 0:
@@ -133,25 +150,190 @@ def cmd_resolve(args):
     print(f"\nOutcomes: {events} events, {rewarded} memories rewarded, {resolved} predictions resolved")
 
 
+def cmd_viz(args):
+    """Generate interactive visualization dashboard or session replay."""
+    import webbrowser
+    from pathlib import Path
+
+    from .viz import export_viz_data, export_replay_data, find_best_replay_session, generate_demo_replay
+
+    output = Path(args.output)
+
+    # Demo mode
+    if getattr(args, 'demo', False):
+        print("Generating demo replay...")
+        data = generate_demo_replay()
+
+        template_path = Path(__file__).parent / "static" / "replay.html"
+        template = template_path.read_text()
+
+        data_script = f"<script>const REPLAY_DATA = {json.dumps(data, default=str)};</script>"
+        html = template.replace("<!-- DATA_PLACEHOLDER -->", data_script)
+
+        if args.output == "./openexp-viz.html":
+            output = Path("./openexp-replay-demo.html")
+
+        output.write_text(html)
+        size_kb = output.stat().st_size / 1024
+        print(f"Written: {output} (self-contained, {size_kb:.0f} KB)")
+
+        if not args.no_open:
+            print("Opening in browser...")
+            webbrowser.open(f"file://{output.resolve()}")
+        return
+
+    # Replay mode
+    if args.replay:
+        session_id = args.replay
+        if session_id == "latest":
+            print("Finding best session for replay...")
+            session_id = find_best_replay_session()
+            if not session_id:
+                print("No suitable sessions found.", file=sys.stderr)
+                sys.exit(1)
+            print(f"  Selected: {session_id[:8]}")
+
+        print(f"Exporting replay for session {session_id[:8]}...")
+        data = export_replay_data(session_id)
+
+        if "error" in data:
+            print(f"Error: {data['error']}", file=sys.stderr)
+            sys.exit(1)
+
+        print(f"  Steps: {data['meta']['total_steps']}")
+        print(f"  Observations: {data['meta']['total_observations']}")
+        print(f"  Memories: {data['meta']['memories_retrieved']}")
+
+        template_path = Path(__file__).parent / "static" / "replay.html"
+        template = template_path.read_text()
+
+        data_script = f"<script>const REPLAY_DATA = {json.dumps(data, default=str)};</script>"
+        html = template.replace("<!-- DATA_PLACEHOLDER -->", data_script)
+
+        # Default output name for replay (only if user didn't specify --output)
+        if args.output == "./openexp-viz.html":
+            output = Path(f"./openexp-replay-{data['meta']['session_id']}.html")
+
+        output.write_text(html)
+        size_kb = output.stat().st_size / 1024
+        print(f"Written: {output} (self-contained, {size_kb:.0f} KB)")
+
+        if not args.no_open:
+            print("Opening in browser...")
+            webbrowser.open(f"file://{output.resolve()}")
+        return
+
+    # Dashboard mode
+    print("Exporting visualization data...")
+    data = export_viz_data(no_qdrant=args.no_qdrant)
+
+    print(f"  Q-cache: {data['meta']['total_memories']:,} entries")
+    print(f"  Observations: {len(data['observations_timeline'])} daily files")
+    print(f"  Sessions: {data['meta']['total_sessions']} tracked")
+
+    template_path = Path(__file__).parent / "static" / "viz.html"
+    template = template_path.read_text()
+
+    data_script = f"<script>const VIZ_DATA = {json.dumps(data, default=str)};</script>"
+    html = template.replace("<!-- DATA_PLACEHOLDER -->", data_script)
+
+    output.write_text(html)
+    size_kb = output.stat().st_size / 1024
+    print(f"Written: {output} (self-contained, {size_kb:.0f} KB)")
+
+    if not args.no_open:
+        print("Opening in browser...")
+        webbrowser.open(f"file://{output.resolve()}")
+
+
 def cmd_stats(args):
     """Show memory system stats."""
     from .core.config import Q_CACHE_PATH
     from .core.q_value import QCache
 
+    experience = _get_experience_name(args)
+
     q_cache = QCache()
     q_cache.load(Q_CACHE_PATH)
 
     print(f"Q-cache entries: {len(q_cache._cache)}")
-    if q_cache._cache:
-        q_values = [v.get("q_value", 0.0) for v in q_cache._cache.values()]
-        print(f"Q-value range: [{min(q_values):.3f}, {max(q_values):.3f}]")
-        print(f"Q-value mean:  {sum(q_values)/len(q_values):.3f}")
+    print(f"Active experience: {experience}")
+
+    stats = q_cache.get_experience_stats(experience)
+    if stats["count"] > 0:
+        print(f"Experience '{experience}': {stats['count']} memories with Q-data")
+        print(f"  Q-value range: [{stats['min']:.3f}, {stats['max']:.3f}]")
+        print(f"  Q-value mean:  {stats['mean']:.3f}")
+    else:
+        print(f"Experience '{experience}': no Q-data yet")
+
+    # Show other experiences if any
+    all_exps = set()
+    for exp_dict in q_cache._cache.values():
+        all_exps.update(exp_dict.keys())
+    if len(all_exps) > 1:
+        print(f"\nAll experiences in cache: {', '.join(sorted(all_exps))}")
+
+
+def cmd_experience(args):
+    """Manage experiences."""
+    from .core.experience import load_experience, list_experiences
+
+    subcmd = args.experience_cmd
+
+    if subcmd == "list":
+        exps = list_experiences()
+        for exp in exps:
+            print(f"  {exp.name}: {exp.description}")
+
+    elif subcmd == "show":
+        name = args.name if hasattr(args, "name") and args.name else "default"
+        exp = load_experience(name)
+        info = {
+            "name": exp.name,
+            "description": exp.description,
+            "session_reward_weights": exp.session_reward_weights,
+            "outcome_resolvers": exp.outcome_resolvers,
+            "retrieval_boosts": exp.retrieval_boosts,
+            "q_config_overrides": exp.q_config_overrides,
+        }
+        print(json.dumps(info, indent=2))
+
+    elif subcmd == "stats":
+        from .core.config import Q_CACHE_PATH
+        from .core.q_value import QCache
+
+        q_cache = QCache()
+        q_cache.load(Q_CACHE_PATH)
+
+        # Collect all experiences
+        all_exps = set()
+        for exp_dict in q_cache._cache.values():
+            all_exps.update(exp_dict.keys())
+
+        if not all_exps:
+            print("No experience data in Q-cache yet.")
+            return
+
+        for exp_name in sorted(all_exps):
+            stats = q_cache.get_experience_stats(exp_name)
+            print(f"{exp_name}: {stats['count']} memories, "
+                  f"Q mean={stats['mean']:.3f}, "
+                  f"range=[{stats['min']:.3f}, {stats['max']:.3f}]")
+    else:
+        print("Usage: openexp experience {list|show|stats}")
+        sys.exit(1)
 
 
 def main():
     parser = argparse.ArgumentParser(
         prog="openexp",
         description="OpenExp CLI — Q-value weighted memory search",
+    )
+    parser.add_argument(
+        "--experience", "-e",
+        default=None,
+        help="Experience name (overrides OPENEXP_EXPERIENCE env var)",
     )
     sub = parser.add_subparsers(dest="cmd")
 
@@ -185,6 +367,19 @@ def main():
     # stats
     sub.add_parser("stats", help="Show memory stats")
 
+    # experience
+    sp_exp = sub.add_parser("experience", help="Manage experiences")
+    sp_exp.add_argument("experience_cmd", choices=["list", "show", "stats"], help="Subcommand")
+    sp_exp.add_argument("name", nargs="?", default=None, help="Experience name (for show)")
+
+    # viz
+    sp_viz = sub.add_parser("viz", help="Generate interactive visualization dashboard")
+    sp_viz.add_argument("--output", "-o", default="./openexp-viz.html", help="Output HTML path")
+    sp_viz.add_argument("--no-open", action="store_true", help="Don't open browser")
+    sp_viz.add_argument("--no-qdrant", action="store_true", help="Skip Qdrant queries")
+    sp_viz.add_argument("--replay", default=None, help="Session ID for replay mode (or 'latest')")
+    sp_viz.add_argument("--demo", action="store_true", help="Generate scripted demo replay")
+
     args = parser.parse_args()
 
     if args.cmd == "search":
@@ -197,6 +392,10 @@ def main():
         cmd_resolve(args)
     elif args.cmd == "stats":
         cmd_stats(args)
+    elif args.cmd == "experience":
+        cmd_experience(args)
+    elif args.cmd == "viz":
+        cmd_viz(args)
     else:
         parser.print_help()
         sys.exit(1)

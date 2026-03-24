@@ -1,0 +1,15 @@
+name: default
+description: General-purpose experience with balanced weights
+session_reward_weights:
+  commit: 0.3
+  pr: 0.2
+  writes: 0.02
+  deploy: 0.1
+  tests: 0.1
+  decisions: 0.1
+  base: -0.1
+  min_obs_penalty: -0.05
+  no_output_penalty: -0.1
+outcome_resolvers: []
+retrieval_boosts: {}
+q_config_overrides: {}

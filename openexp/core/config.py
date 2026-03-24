@@ -49,3 +49,7 @@ OUTCOME_RESOLVERS = os.getenv("OPENEXP_OUTCOME_RESOLVERS", "").strip()
 
 # CRM directory for CRMCSVResolver (local path, not checked in)
 CRM_DIR = Path(os.getenv("OPENEXP_CRM_DIR", "")) if os.getenv("OPENEXP_CRM_DIR") else None
+
+# Experience system
+ACTIVE_EXPERIENCE = os.getenv("OPENEXP_EXPERIENCE", "default")
+EXPERIENCES_DIR = Path(os.getenv("OPENEXP_EXPERIENCES_DIR", os.path.expanduser("~/.openexp/experiences")))

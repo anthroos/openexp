@@ -19,6 +19,7 @@ q_cache = None
 q_updater = None
 reward_tracker = None
 direct_search = None
+active_experience = None
 SESSION_ID = None
 DELTAS_DIR = None
 Q_CACHE_PATH = None
@@ -27,7 +28,7 @@ _initialized = False
 
 def _init_server():
     """Initialize server state. Called once from main(), not at import time."""
-    global q_cache, q_updater, reward_tracker, direct_search
+    global q_cache, q_updater, reward_tracker, direct_search, active_experience
     global SESSION_ID, DELTAS_DIR, Q_CACHE_PATH, _initialized
 
     if _initialized:
@@ -36,6 +37,7 @@ def _init_server():
     from .core.config import DATA_DIR, Q_CACHE_PATH as _qcp
     from .core.q_value import QCache, QValueUpdater
     from .core import direct_search as _ds
+    from .core.experience import get_active_experience
     from .reward_tracker import RewardTracker
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -44,11 +46,19 @@ def _init_server():
     SESSION_ID = uuid.uuid4().hex[:12]
     DELTAS_DIR = DATA_DIR / "deltas"
 
+    active_experience = get_active_experience()
+    logger.info("Active experience: %s", active_experience.name)
+
     q_cache = QCache()
     q_cache.load_and_merge(Q_CACHE_PATH, DELTAS_DIR)
 
     q_updater = QValueUpdater(cache=q_cache)
-    reward_tracker = RewardTracker(data_dir=DATA_DIR, q_updater=q_updater, q_cache=q_cache)
+    reward_tracker = RewardTracker(
+        data_dir=DATA_DIR,
+        q_updater=q_updater,
+        q_cache=q_cache,
+        experience=active_experience.name,
+    )
 
     atexit.register(lambda: q_cache.save_delta(DELTAS_DIR, SESSION_ID))
     _initialized = True
@@ -172,6 +182,49 @@ TOOLS = [
             "required": [],
         },
     },
+    # Phase 2: Introspection tools
+    {
+        "name": "experience_info",
+        "description": "Get current active experience config (name, weights, resolvers, boosts)",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "experience_top_memories",
+        "description": "Get top or bottom N memories by Q-value in the active experience",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "n": {"type": "integer", "default": 10, "description": "Number of memories to return"},
+                "bottom": {"type": "boolean", "default": False, "description": "If true, return lowest Q-value memories instead"},
+            },
+            "required": [],
+        },
+    },
+    {
+        "name": "experience_insights",
+        "description": "Get reward distribution, learning velocity, and most/least valuable memory types in the active experience",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "calibrate_experience_q",
+        "description": "Manually set Q-value for a memory in the active experience",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "Memory ID to calibrate"},
+                "q_value": {"type": "number", "description": "New Q-value [-0.5, 1.0]"},
+            },
+            "required": ["memory_id", "q_value"],
+        },
+    },
 ]
 
 
@@ -195,6 +248,7 @@ class _ErrorResponse(Exception):
 def handle_request(request: dict) -> dict:
     """Handle a single MCP JSON-RPC request."""
     method = request.get("method")
+    exp_name = active_experience.name if active_experience else "default"
 
     if method == "initialize":
         return {
@@ -225,6 +279,7 @@ def handle_request(request: dict) -> dict:
                 memory_type=args.get("type"),
                 client_id=args.get("client_id"),
                 q_cache=q_cache,
+                experience=exp_name,
             )
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
@@ -241,6 +296,7 @@ def handle_request(request: dict) -> dict:
                 memory_type=args.get("type", "fact"),
                 metadata=meta,
                 q_cache=q_cache,
+                experience=exp_name,
             )
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
 
@@ -270,6 +326,7 @@ def handle_request(request: dict) -> dict:
                 limit=_clamp(args.get("limit", 10), 1, MAX_SEARCH_LIMIT),
                 client_id=args.get("client_id"),
                 q_cache=q_cache,
+                experience=exp_name,
             )
             memories = search_result.get("results", [])
 
@@ -282,6 +339,7 @@ def handle_request(request: dict) -> dict:
                 "memories": memories,
                 "memory_count": len(memories),
                 "pending_predictions": pending,
+                "experience": exp_name,
             }
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
@@ -293,6 +351,7 @@ def handle_request(request: dict) -> dict:
                 query="recent patterns decisions insights",
                 limit=20,
                 q_cache=q_cache,
+                experience=exp_name,
             )
             # Filter to memories within the time window
             all_results = search_result.get("results", [])
@@ -307,6 +366,7 @@ def handle_request(request: dict) -> dict:
             result = {
                 "status": "reflected",
                 "hours": hours,
+                "experience": exp_name,
                 "memories_found": len(filtered),
                 "top_memories": [
                     {
@@ -332,6 +392,7 @@ def handle_request(request: dict) -> dict:
                 reward_tracker=reward_tracker,
                 q_cache=q_cache,
                 q_updater=q_updater,
+                experience=exp_name,
             )
 
             if result.get("total_events", 0) > 0:
@@ -349,10 +410,118 @@ def handle_request(request: dict) -> dict:
         elif tool_name == "memory_stats":
             stats = {
                 "q_cache_size": len(q_cache),
+                "active_experience": exp_name,
+                "experience_stats": q_cache.get_experience_stats(exp_name),
                 "pending_predictions": len(reward_tracker.get_pending_predictions()),
                 "reward_stats": reward_tracker.get_prediction_stats(),
             }
             return {"content": [{"type": "text", "text": json.dumps(stats, indent=2, default=str)}]}
+
+        # Phase 2: Introspection tools
+        elif tool_name == "experience_info":
+            info = {
+                "name": active_experience.name,
+                "description": active_experience.description,
+                "session_reward_weights": active_experience.session_reward_weights,
+                "outcome_resolvers": active_experience.outcome_resolvers,
+                "retrieval_boosts": active_experience.retrieval_boosts,
+                "q_config_overrides": active_experience.q_config_overrides,
+                "stats": q_cache.get_experience_stats(exp_name),
+            }
+            return {"content": [{"type": "text", "text": json.dumps(info, indent=2, default=str)}]}
+
+        elif tool_name == "experience_top_memories":
+            n = _clamp(args.get("n", 10), 1, 100)
+            bottom = args.get("bottom", False)
+
+            # Collect all memories with Q-data for this experience
+            entries = []
+            for mem_id, exp_dict in q_cache._cache.items():
+                q_data = exp_dict.get(exp_name)
+                if q_data:
+                    entries.append({
+                        "memory_id": mem_id,
+                        "q_value": q_data.get("q_value", 0.0),
+                        "q_visits": q_data.get("q_visits", 0),
+                        "last_reward": q_data.get("last_reward"),
+                    })
+
+            entries.sort(key=lambda x: x["q_value"], reverse=not bottom)
+            result = {
+                "experience": exp_name,
+                "direction": "bottom" if bottom else "top",
+                "count": len(entries[:n]),
+                "memories": entries[:n],
+            }
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "experience_insights":
+            from collections import Counter
+
+            q_values = []
+            visits = []
+            rewards = []
+            for exp_dict in q_cache._cache.values():
+                q_data = exp_dict.get(exp_name)
+                if q_data:
+                    q_values.append(q_data.get("q_value", 0.0))
+                    visits.append(q_data.get("q_visits", 0))
+                    last_r = q_data.get("last_reward")
+                    if last_r is not None:
+                        rewards.append(last_r)
+
+            # Distribution buckets
+            buckets = Counter()
+            for q in q_values:
+                if q < -0.25:
+                    buckets["very_negative"] += 1
+                elif q < 0:
+                    buckets["negative"] += 1
+                elif q < 0.25:
+                    buckets["neutral"] += 1
+                elif q < 0.5:
+                    buckets["positive"] += 1
+                else:
+                    buckets["very_positive"] += 1
+
+            result = {
+                "experience": exp_name,
+                "total_memories": len(q_values),
+                "q_distribution": dict(buckets),
+                "q_mean": round(sum(q_values) / len(q_values), 4) if q_values else 0,
+                "q_min": round(min(q_values), 4) if q_values else 0,
+                "q_max": round(max(q_values), 4) if q_values else 0,
+                "avg_visits": round(sum(visits) / len(visits), 2) if visits else 0,
+                "avg_last_reward": round(sum(rewards) / len(rewards), 4) if rewards else 0,
+                "memories_never_visited": sum(1 for v in visits if v == 0),
+            }
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "calibrate_experience_q":
+            mem_id = args["memory_id"]
+            new_q = _clamp(args["q_value"], -0.5, 1.0)
+
+            q_data = q_cache.get(mem_id, exp_name) or {
+                "q_action": 0.0,
+                "q_hypothesis": 0.0,
+                "q_fit": 0.0,
+                "q_visits": 0,
+            }
+            q_data["q_value"] = new_q
+            q_data["q_action"] = new_q
+            q_data["q_hypothesis"] = new_q
+            q_data["q_fit"] = new_q
+            from datetime import datetime, timezone
+            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+            q_cache.set(mem_id, q_data, exp_name)
+
+            result = {
+                "memory_id": mem_id,
+                "experience": exp_name,
+                "new_q_value": new_q,
+                "status": "calibrated",
+            }
+            return {"content": [{"type": "text", "text": json.dumps(result)}]}
 
         raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")
 

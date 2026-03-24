@@ -134,6 +134,7 @@ fi
   cd "$OPENEXP_DIR"
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: starting ingest for session $SESSION_SHORT" >> "$INGEST_LOG"
 
+  export OPENEXP_EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
   "$PYTHON" -m openexp.cli ingest --session-id "$SESSION_ID" >> "$INGEST_LOG" 2>&1
   EXIT_CODE=$?
 

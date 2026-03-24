@@ -334,7 +334,7 @@ class TestMultiLayerReward:
         assert updated == 1
 
         q_data = json.loads(q_cache_path.read_text())
-        entry = q_data["mem-1"]
+        entry = q_data["mem-1"]["default"]
 
         # All layers should be updated (additive: 0.0 + 0.25 * reward)
         assert entry["q_action"] != 0.0
@@ -357,7 +357,7 @@ class TestMultiLayerReward:
             apply_session_reward(["mem-1"], reward=-0.4)
 
         q_data = json.loads(q_cache_path.read_text())
-        entry = q_data["mem-1"]
+        entry = q_data["mem-1"]["default"]
 
         # Additive: Q_new = 0.0 + 0.25 * reward
         # action gets full -0.4, fit gets -0.2 (discounted)
