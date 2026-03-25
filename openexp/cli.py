@@ -9,6 +9,7 @@ Usage:
     python3 -m openexp.cli experience list
     python3 -m openexp.cli experience show sales
     python3 -m openexp.cli experience stats
+    python3 -m openexp.cli experience create
 """
 import argparse
 import json
@@ -275,6 +276,198 @@ def cmd_stats(args):
         print(f"\nAll experiences in cache: {', '.join(sorted(all_exps))}")
 
 
+def _rating_to_weight(rating: int) -> float:
+    """Convert 0-10 rating to 0.0-0.30 weight."""
+    table = {10: 0.30, 9: 0.28, 8: 0.25, 7: 0.20, 6: 0.15, 5: 0.12,
+             4: 0.10, 3: 0.07, 2: 0.05, 1: 0.02, 0: 0.0}
+    return table.get(rating, 0.0)
+
+
+def _ask_int(prompt: str, low: int, high: int, default: int | None = None) -> int:
+    """Ask for an integer in [low, high] range."""
+    suffix = f" [{default}]" if default is not None else ""
+    while True:
+        raw = input(f"{prompt} ({low}-{high}){suffix}: ").strip()
+        if not raw and default is not None:
+            return default
+        try:
+            val = int(raw)
+            if low <= val <= high:
+                return val
+        except ValueError:
+            pass
+        print(f"  Please enter a number between {low} and {high}.")
+
+
+def _ask_choice(prompt: str, choices: list[tuple[str, str]], default: int = 1) -> int:
+    """Ask user to pick from numbered choices. Returns 0-based index."""
+    print(f"\n{prompt}")
+    for i, (label, desc) in enumerate(choices, 1):
+        marker = " (default)" if i == default else ""
+        print(f"  {i}. {label} — {desc}{marker}")
+    while True:
+        raw = input(f"Choice [1-{len(choices)}, default={default}]: ").strip()
+        if not raw:
+            return default - 1
+        try:
+            val = int(raw)
+            if 1 <= val <= len(choices):
+                return val - 1
+        except ValueError:
+            pass
+        print(f"  Please enter 1-{len(choices)}.")
+
+
+def _experience_create_wizard():
+    """Interactive wizard to create a custom experience YAML."""
+    import yaml
+    from .core.config import EXPERIENCES_DIR
+
+    print("=" * 50)
+    print("  OpenExp — Create Custom Experience")
+    print("=" * 50)
+
+    # Name
+    while True:
+        name = input("\nExperience name (lowercase, no spaces): ").strip().lower().replace(" ", "-")
+        if name and name.isidentifier() or all(c.isalnum() or c == "-" for c in name):
+            break
+        print("  Use only letters, numbers, and hyphens.")
+
+    # Description
+    desc = input("One-line description: ").strip() or f"{name} experience"
+
+    # Signal ratings
+    signals = [
+        ("commit", "Committed code to git"),
+        ("pr", "Created a Pull Request"),
+        ("writes", "Edited/created files"),
+        ("deploy", "Deployed to production"),
+        ("tests", "Tests passed"),
+        ("decisions", "Recorded a decision"),
+        ("email_sent", "Sent an email"),
+        ("follow_up", "Made a follow-up"),
+        ("proposal_sent", "Sent a proposal"),
+        ("invoice_sent", "Sent an invoice"),
+        ("call_scheduled", "Scheduled a call"),
+        ("nda_exchanged", "Exchanged NDA/agreement"),
+        ("payment_received", "Payment received"),
+    ]
+
+    print("\n--- Rate each signal 0-10 (how important for YOUR workflow) ---")
+    print("  10 = this IS the goal   5 = moderate   0 = irrelevant")
+    print()
+
+    weights = {}
+    for key, label in signals:
+        rating = _ask_int(f"  {label}", 0, 10, default=0)
+        w = _rating_to_weight(rating)
+        if key == "writes":
+            w = round(w / 5, 3)  # per-file weight, cap at ~0.06/file
+        weights[key] = w
+
+    # Penalties
+    penalty_idx = _ask_choice(
+        "How strict should penalties be?",
+        [
+            ("Lenient", "research/exploration sessions are normal (base: -0.03)"),
+            ("Moderate", "most sessions should produce something (base: -0.05)"),
+            ("Strict", "no output = wasted time (base: -0.10)"),
+        ],
+        default=2,
+    )
+    base_penalties = [
+        {"base": -0.03, "min_obs_penalty": -0.02, "no_output_penalty": -0.03},
+        {"base": -0.05, "min_obs_penalty": -0.03, "no_output_penalty": -0.05},
+        {"base": -0.10, "min_obs_penalty": -0.05, "no_output_penalty": -0.10},
+    ]
+    weights.update(base_penalties[penalty_idx])
+
+    # Learning speed
+    alpha_idx = _ask_choice(
+        "How fast does your domain change?",
+        [
+            ("Fast", "sales, news — learn fast, forget fast (α=0.30)"),
+            ("Normal", "engineering — balanced (α=0.25)"),
+            ("Slow", "research, legal — accumulate gradually (α=0.15)"),
+        ],
+        default=2,
+    )
+    alpha_values = [0.30, 0.25, 0.15]
+    alpha = alpha_values[alpha_idx]
+
+    # Retrieval boosts
+    print("\n--- Which memory types should rank higher in search? ---")
+    boosts = {}
+    boost_types = [
+        ("decision", "Strategic choices"),
+        ("outcome", "Results of past actions"),
+        ("fact", "Domain knowledge"),
+    ]
+    for mem_type, label in boost_types:
+        boost_idx = _ask_choice(
+            f"Boost for '{mem_type}' ({label})?",
+            [
+                ("None", "no boost (1.0×)"),
+                ("Mild", "slight boost (1.1×)"),
+                ("Strong", "significant boost (1.3×)"),
+            ],
+            default=1,
+        )
+        boost_val = [1.0, 1.1, 1.3][boost_idx]
+        if boost_val > 1.0:
+            boosts[mem_type] = boost_val
+
+    # Outcome resolvers
+    use_crm = _ask_choice(
+        "Do you use CRM-based outcome tracking?",
+        [
+            ("No", "no external outcome resolvers"),
+            ("Yes", "enable CRM CSV resolver (requires OPENEXP_CRM_DIR)"),
+        ],
+        default=1,
+    )
+    resolvers = ["openexp.resolvers.crm_csv:CRMCSVResolver"] if use_crm == 1 else []
+
+    # Build YAML
+    experience = {
+        "name": name,
+        "description": desc,
+        "session_reward_weights": weights,
+        "outcome_resolvers": resolvers,
+        "retrieval_boosts": boosts if boosts else {},
+        "q_config_overrides": {"alpha": alpha} if alpha != 0.25 else {},
+    }
+
+    # Summary
+    total_positive = sum(v for v in weights.values() if v > 0)
+    print("\n" + "=" * 50)
+    print(f"  Experience: {name}")
+    print(f"  Description: {desc}")
+    print(f"  Total positive weight: {total_positive:.2f}")
+    if total_positive < 0.5:
+        print("  ⚠ Low total — sessions may rarely earn positive reward")
+    elif total_positive > 1.5:
+        print("  ⚠ High total — most sessions will max out reward")
+    print(f"  Alpha: {alpha}")
+    print("=" * 50)
+
+    yaml_text = yaml.dump(experience, default_flow_style=False, sort_keys=False)
+    print(f"\n{yaml_text}")
+
+    # Save
+    EXPERIENCES_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = EXPERIENCES_DIR / f"{name}.yaml"
+
+    confirm = input(f"Save to {out_path}? [Y/n]: ").strip().lower()
+    if confirm in ("", "y", "yes"):
+        out_path.write_text(yaml_text)
+        print(f"\nSaved: {out_path}")
+        print(f"Activate: export OPENEXP_EXPERIENCE={name}")
+    else:
+        print("Not saved. You can copy the YAML above manually.")
+
+
 def cmd_experience(args):
     """Manage experiences."""
     from .core.experience import load_experience, list_experiences
@@ -298,6 +491,9 @@ def cmd_experience(args):
             "q_config_overrides": exp.q_config_overrides,
         }
         print(json.dumps(info, indent=2))
+
+    elif subcmd == "create":
+        _experience_create_wizard()
 
     elif subcmd == "stats":
         from .core.config import Q_CACHE_PATH
@@ -369,8 +565,8 @@ def main():
 
     # experience
     sp_exp = sub.add_parser("experience", help="Manage experiences")
-    sp_exp.add_argument("experience_cmd", choices=["list", "show", "stats"], help="Subcommand")
-    sp_exp.add_argument("name", nargs="?", default=None, help="Experience name (for show)")
+    sp_exp.add_argument("experience_cmd", choices=["list", "show", "stats", "create"], help="Subcommand")
+    sp_exp.add_argument("name", nargs="?", default=None, help="Experience name (for show/create)")
 
     # viz
     sp_viz = sub.add_parser("viz", help="Generate interactive visualization dashboard")
