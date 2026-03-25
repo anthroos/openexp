@@ -13,8 +13,25 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .core.q_value import QValueUpdater, QCache, compute_layer_rewards
+from .core.reward_log import generate_reward_id, log_reward_event
 
 logger = logging.getLogger(__name__)
+
+def _build_prediction_reward_context(
+    prediction: str, outcome: str, reward: float, cause_category: str | None = None,
+) -> str:
+    """Build a human-readable reward context for a prediction→outcome resolution.
+
+    Format: "Pred +0.80: 'prediction snippet' -> 'outcome snippet'"
+    """
+    sign = "+" if reward >= 0 else ""
+    pred_snippet = prediction[:40].replace("'", "")
+    out_snippet = outcome[:40].replace("'", "")
+    ctx = f"Pred {sign}{reward:.2f}: '{pred_snippet}' -> '{out_snippet}'"
+    if cause_category:
+        ctx += f" [{cause_category}]"
+    return ctx
+
 
 CAUSE_CATEGORIES = {
     "execution_failure",
@@ -153,19 +170,47 @@ class RewardTracker:
             self._rewrite_predictions_file()
 
         # Update Q-values (outside lock — memory_ids copied inside lock)
+        reward_ctx = _build_prediction_reward_context(
+            pred.get("prediction", ""), outcome, reward, cause_category,
+        )
+
+        # L3 cold storage
+        rwd_id = generate_reward_id()
+        log_reward_event(
+            reward_id=rwd_id,
+            reward_type="prediction",
+            reward=reward,
+            memory_ids=memory_ids,
+            context={
+                "prediction_id": prediction_id,
+                "prediction": pred.get("prediction", ""),
+                "outcome": outcome,
+                "confidence": pred.get("confidence"),
+                "strategic_value": pred.get("strategic_value"),
+                "cause_category": cause_category,
+                "source": source,
+                "client_id": pred.get("client_id"),
+            },
+            experience=self.experience,
+        )
+
         updated_q = {}
         layer_rewards = compute_layer_rewards(reward)
         for mem_id in memory_ids:
-            updated_q[mem_id] = self.q_updater.update_all_layers(mem_id, layer_rewards, experience=self.experience)
+            updated_q[mem_id] = self.q_updater.update_all_layers(
+                mem_id, layer_rewards, experience=self.experience,
+                reward_context=reward_ctx, reward_id=rwd_id,
+            )
 
         logger.info(
-            "Outcome for %s: reward=%.2f, updated %d memories",
-            prediction_id, reward, len(updated_q),
+            "Outcome for %s: reward=%.2f, updated %d memories (reward_id=%s)",
+            prediction_id, reward, len(updated_q), rwd_id,
         )
 
         return {
             "prediction_id": prediction_id,
             "reward": reward,
+            "reward_id": rwd_id,
             "cause_category": cause_category,
             "memories_updated": len(updated_q),
             "q_updates": {k: v.get("q_value", 0) for k, v in updated_q.items()},

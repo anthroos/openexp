@@ -8,8 +8,39 @@ from typing import Dict, List, Optional
 
 from ..core.config import Q_CACHE_PATH
 from ..core.q_value import QCache, QValueUpdater, compute_layer_rewards
+from ..core.reward_log import generate_reward_id, log_reward_event, compact_observation
 
 logger = logging.getLogger(__name__)
+
+
+def _build_session_reward_context(observations: List[Dict], reward: float) -> str:
+    """Build a human-readable reward context summarizing session productivity.
+
+    Format: "Session +0.30: 2 commits, 1 PR, 5 writes"
+    """
+    tools = [o.get("tool", "") for o in observations]
+    summaries = [o.get("summary", "") for o in observations]
+
+    parts = []
+    commits = sum(1 for s in summaries if "git commit" in s)
+    if commits:
+        parts.append(f"{commits} commit{'s' if commits > 1 else ''}")
+    prs = sum(1 for s in summaries if "gh pr" in s)
+    if prs:
+        parts.append(f"{prs} PR{'s' if prs > 1 else ''}")
+    writes = sum(1 for t in tools if t in ("Write", "Edit"))
+    if writes:
+        parts.append(f"{writes} write{'s' if writes > 1 else ''}")
+    deploys = sum(1 for s in summaries if "deploy" in s.lower())
+    if deploys:
+        parts.append(f"{deploys} deploy{'s' if deploys > 1 else ''}")
+    decisions = sum(1 for o in observations if o.get("type") == "decision")
+    if decisions:
+        parts.append(f"{decisions} decision{'s' if decisions > 1 else ''}")
+
+    sign = "+" if reward >= 0 else ""
+    summary = ", ".join(parts) if parts else "no output"
+    return f"Session {sign}{reward:.2f}: {summary}"
 
 
 def compute_session_reward(
@@ -107,8 +138,14 @@ def apply_session_reward(
     reward: float,
     q_cache: QCache | None = None,
     experience: str = "default",
+    reward_context: Optional[str] = None,
+    observations: Optional[List[Dict]] = None,
+    session_id: Optional[str] = None,
 ) -> int:
-    """Apply reward to all memories from a session."""
+    """Apply reward to all memories from a session.
+
+    If observations provided, writes full context to L3 cold storage.
+    """
     if not point_ids:
         return 0
 
@@ -116,14 +153,45 @@ def apply_session_reward(
         q_cache = QCache()
         q_cache.load(Q_CACHE_PATH)
 
+    # Generate reward_id and write L3 cold storage
+    rwd_id = generate_reward_id()
+    cold_context: Dict = {}
+    if observations:
+        cold_context["observations"] = [compact_observation(o) for o in observations]
+        cold_context["observation_count"] = len(observations)
+        # Build reward breakdown
+        tools = [o.get("tool", "") for o in observations]
+        summaries = [o.get("summary", "") for o in observations]
+        cold_context["reward_breakdown"] = {
+            "commits": sum(1 for s in summaries if "git commit" in s),
+            "prs": sum(1 for s in summaries if "gh pr" in s),
+            "writes": sum(1 for t in tools if t in ("Write", "Edit")),
+            "deploys": sum(1 for s in summaries if "deploy" in s.lower()),
+            "decisions": sum(1 for o in observations if o.get("type") == "decision"),
+        }
+    if session_id:
+        cold_context["session_id"] = session_id
+
+    log_reward_event(
+        reward_id=rwd_id,
+        reward_type="session",
+        reward=reward,
+        memory_ids=point_ids,
+        context=cold_context,
+        experience=experience,
+    )
+
     updater = QValueUpdater(cache=q_cache)
     layer_rewards = compute_layer_rewards(reward)
     updated = {}
     for mem_id in point_ids:
-        updated[mem_id] = updater.update_all_layers(mem_id, layer_rewards, experience=experience)
+        updated[mem_id] = updater.update_all_layers(
+            mem_id, layer_rewards, experience=experience,
+            reward_context=reward_context, reward_id=rwd_id,
+        )
 
     q_cache.save(Q_CACHE_PATH)
-    logger.info("Applied session reward=%.2f to %d memories (experience=%s)", reward, len(updated), experience)
+    logger.info("Applied session reward=%.2f to %d memories (experience=%s, reward_id=%s)", reward, len(updated), experience, rwd_id)
     return len(updated)
 
 
@@ -131,6 +199,7 @@ def reward_retrieved_memories(
     session_id: str,
     reward: float,
     experience: str = "default",
+    reward_context: Optional[str] = None,
 ) -> int:
     """Reward memories that were retrieved at session start.
 
@@ -142,7 +211,7 @@ def reward_retrieved_memories(
     if not memory_ids:
         return 0
 
-    updated = apply_session_reward(memory_ids, reward, experience=experience)
+    updated = apply_session_reward(memory_ids, reward, experience=experience, reward_context=reward_context)
     logger.info(
         "Rewarded %d retrieved memories for session %s (reward=%.2f, experience=%s)",
         updated, session_id[:8], reward, experience,
