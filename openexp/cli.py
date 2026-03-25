@@ -10,6 +10,7 @@ Usage:
     python3 -m openexp.cli experience show sales
     python3 -m openexp.cli experience stats
     python3 -m openexp.cli experience create
+    python3 -m openexp.cli compact --dry-run
 """
 import argparse
 import json
@@ -474,6 +475,39 @@ def _experience_create_wizard():
         print("Not saved. You can copy the YAML above manually.")
 
 
+def cmd_compact(args):
+    """Run memory compaction — merge similar memories into compressed entries."""
+    logging.getLogger("openexp").setLevel(logging.INFO)
+
+    from .core.compaction import compact_memories
+
+    experience = _get_experience_name(args)
+
+    result = compact_memories(
+        max_distance=args.max_distance,
+        min_cluster_size=args.min_cluster,
+        client_id=getattr(args, "client_id", None),
+        project=getattr(args, "project", None),
+        experience=experience,
+        dry_run=args.dry_run,
+        max_clusters=args.max_clusters,
+    )
+
+    if args.dry_run:
+        print(f"\n[dry-run] Found {result['memories_found']} active memories")
+        print(f"[dry-run] {result['clusters']} clusters found")
+        for detail in result.get("details", []):
+            print(f"  Cluster ({detail['original_count']} memories, Q={detail['q_value']:.3f}, "
+                  f"kappa={detail['kappa']:.1f}):")
+            preview = detail["merged_content"][:100]
+            print(f"    {preview}...")
+    else:
+        print(f"\nCompacted: {result.get('compacted', 0)} clusters "
+              f"({result.get('memories_merged', 0)} memories merged)")
+
+    print(json.dumps(result, indent=2, default=str))
+
+
 def cmd_experience(args):
     """Manage experiences."""
     from .core.experience import load_experience, list_experiences
@@ -574,6 +608,15 @@ def main():
     sp_exp.add_argument("experience_cmd", choices=["list", "show", "stats", "create"], help="Subcommand")
     sp_exp.add_argument("name", nargs="?", default=None, help="Experience name (for show/create)")
 
+    # compact
+    sp_compact = sub.add_parser("compact", help="Merge similar memories into compressed entries")
+    sp_compact.add_argument("--dry-run", action="store_true", help="Preview clusters without merging")
+    sp_compact.add_argument("--max-distance", type=float, default=0.25, help="Max cosine distance for clustering (0.0-1.0)")
+    sp_compact.add_argument("--min-cluster", type=int, default=3, help="Minimum cluster size to compact")
+    sp_compact.add_argument("--max-clusters", type=int, default=50, help="Max clusters to process")
+    sp_compact.add_argument("--client-id", default=None, help="Filter by client ID")
+    sp_compact.add_argument("--project", default=None, help="Filter by project name")
+
     # viz
     sp_viz = sub.add_parser("viz", help="Generate interactive visualization dashboard")
     sp_viz.add_argument("--output", "-o", default="./openexp-viz.html", help="Output HTML path")
@@ -594,6 +637,8 @@ def main():
         cmd_resolve(args)
     elif args.cmd == "stats":
         cmd_stats(args)
+    elif args.cmd == "compact":
+        cmd_compact(args)
     elif args.cmd == "experience":
         cmd_experience(args)
     elif args.cmd == "viz":
