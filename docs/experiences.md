@@ -95,6 +95,13 @@ Or per-session:
 OPENEXP_EXPERIENCE=dealflow claude
 ```
 
+Or per-project — create `.openexp.yaml` in your project root:
+```yaml
+experience: dealflow
+```
+
+Priority: project `.openexp.yaml` > `OPENEXP_EXPERIENCE` env var > `default`
+
 Check active experience:
 ```bash
 openexp experience list

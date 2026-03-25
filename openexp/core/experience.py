@@ -105,10 +105,35 @@ def load_experience(name: str) -> Experience:
     return DEFAULT_EXPERIENCE
 
 
-def get_active_experience() -> Experience:
-    """Get the currently active experience from OPENEXP_EXPERIENCE env var."""
+def resolve_experience_name(cwd: Optional[str] = None) -> str:
+    """Resolve the experience name for a given working directory.
+
+    Priority:
+      1. {cwd}/.openexp.yaml → read 'experience' field
+      2. OPENEXP_EXPERIENCE env var
+      3. "default"
+    """
+    if cwd:
+        project_config = Path(cwd) / ".openexp.yaml"
+        if project_config.exists():
+            try:
+                data = yaml.safe_load(project_config.read_text())
+                if isinstance(data, dict) and "experience" in data:
+                    return data["experience"]
+            except Exception as e:
+                logger.warning("Failed to read %s: %s", project_config, e)
+
     from .config import ACTIVE_EXPERIENCE
-    return load_experience(ACTIVE_EXPERIENCE)
+    return ACTIVE_EXPERIENCE
+
+
+def get_active_experience(cwd: Optional[str] = None) -> Experience:
+    """Get the currently active experience.
+
+    Checks project-level .openexp.yaml first, then OPENEXP_EXPERIENCE env var.
+    """
+    name = resolve_experience_name(cwd)
+    return load_experience(name)
 
 
 def list_experiences() -> List[Experience]:

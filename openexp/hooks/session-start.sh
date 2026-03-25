@@ -47,8 +47,12 @@ fi
 # --- Search memories ---
 cd "$OPENEXP_DIR"
 export OPENEXP_TMPDIR="$TMPDIR_HOOK"
-# Propagate experience (defaults to "default" if unset)
+# Resolve experience: project .openexp.yaml → env var → default
 EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
+if [ -f "$CWD/.openexp.yaml" ]; then
+  PROJECT_EXP=$(python3 -c "import yaml; d=yaml.safe_load(open('$CWD/.openexp.yaml')); print(d.get('experience',''))" 2>/dev/null)
+  [ -n "$PROJECT_EXP" ] && EXPERIENCE="$PROJECT_EXP"
+fi
 "$PYTHON" -c "
 import json, sys, os
 sys.path.insert(0, '.')
