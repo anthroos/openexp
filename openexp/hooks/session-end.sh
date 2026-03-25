@@ -21,6 +21,7 @@ INGEST_LOG="$HOME/.openexp/ingest.log"
 # Read stdin (Claude Code passes session JSON)
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
+CWD=$(echo "$INPUT" | jq -r '.cwd // ""')
 
 # Nothing to do without a session ID
 if [ "$SESSION_ID" = "unknown" ] || [ "$SESSION_ID" = "null" ]; then
@@ -134,7 +135,13 @@ fi
   cd "$OPENEXP_DIR"
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: starting ingest for session $SESSION_SHORT" >> "$INGEST_LOG"
 
-  export OPENEXP_EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
+  # Resolve experience: project .openexp.yaml → env var → default
+  EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
+  if [ -n "$CWD" ] && [ -f "$CWD/.openexp.yaml" ]; then
+    PROJECT_EXP=$(python3 -c "import yaml; d=yaml.safe_load(open('$CWD/.openexp.yaml')); print(d.get('experience',''))" 2>/dev/null)
+    [ -n "$PROJECT_EXP" ] && EXPERIENCE="$PROJECT_EXP"
+  fi
+  export OPENEXP_EXPERIENCE="$EXPERIENCE"
   "$PYTHON" -m openexp.cli ingest --session-id "$SESSION_ID" >> "$INGEST_LOG" 2>&1
   EXIT_CODE=$?
 
