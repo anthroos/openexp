@@ -348,11 +348,29 @@ openexp ingest             # ingest into Qdrant
 openexp stats              # check Q-cache state
 ```
 
+## Experiences
+
+Not everyone writes code. OpenExp ships with three **Experiences** — domain-specific reward profiles:
+
+| Experience | Optimized For | Top Signals |
+|------------|--------------|-------------|
+| `default` | Software engineering | commits, PRs, tests |
+| `sales` | Sales & outreach | decisions, emails, follow-ups |
+| `dealflow` | Deal pipeline (lead → payment) | proposals, invoices, payments |
+
+Switch with one env var:
+```bash
+export OPENEXP_EXPERIENCE=dealflow
+```
+
+**Create your own** — answer a questionnaire, get a YAML. See the [Experiences Guide](docs/experiences.md).
+
 ## Documentation
 
 Detailed docs are available in the [`docs/`](docs/) directory:
 
 - [How It Works](docs/how-it-works.md) — full explanation of the learning loop
+- [Experiences](docs/experiences.md) — domain-specific reward profiles (create your own)
 - [Architecture](docs/architecture.md) — system design and data flow
 - [Configuration](docs/configuration.md) — all environment variables and options
 

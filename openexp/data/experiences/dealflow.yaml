@@ -1,0 +1,31 @@
+name: dealflow
+description: Deal pipeline — from lead to payment. Rewards actions that move deals forward.
+session_reward_weights:
+  # Deal-advancing (high reward)
+  proposal_sent: 0.25
+  invoice_sent: 0.20
+  payment_received: 0.30
+  call_scheduled: 0.15
+  nda_exchanged: 0.10
+  # Deal-maintaining (medium reward)
+  email_sent: 0.15
+  follow_up: 0.15
+  decisions: 0.15
+  # Support (low reward — not the goal, but not zero)
+  writes: 0.01
+  commit: 0.05
+  pr: 0.02
+  deploy: 0.0
+  tests: 0.0
+  # Penalties (mild — sales sessions are often short)
+  base: -0.05
+  min_obs_penalty: -0.03
+  no_output_penalty: -0.05
+outcome_resolvers:
+  - "openexp.resolvers.crm_csv:CRMCSVResolver"
+retrieval_boosts:
+  decision: 1.3
+  outcome: 1.2
+  fact: 1.1
+q_config_overrides:
+  alpha: 0.30
