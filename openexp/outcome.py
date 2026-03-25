@@ -16,8 +16,22 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 from .core.config import COLLECTION_NAME
 from .core.direct_search import _get_qdrant
 from .core.q_value import QCache, QValueUpdater, compute_layer_rewards
+from .core.reward_log import generate_reward_id, log_reward_event
 
 logger = logging.getLogger(__name__)
+
+
+def _build_outcome_reward_context(event: "OutcomeEvent") -> str:
+    """Build a human-readable reward context for a business outcome event.
+
+    Format: "Biz +0.50: deal_closed for comp-squad {amount=$8000}"
+    """
+    sign = "+" if event.reward >= 0 else ""
+    ctx = f"Biz {sign}{event.reward:.2f}: {event.event_name} for {event.entity_id}"
+    if event.details:
+        details_str = ", ".join(f"{k}={v}" for k, v in list(event.details.items())[:3])
+        ctx += f" {{{details_str}}}"
+    return ctx
 
 
 @dataclass
@@ -108,13 +122,13 @@ def resolve_outcomes(
 
     Returns summary of all actions taken.
     """
-    all_events: List[OutcomeEvent] = []
+    all_events: List[tuple] = []  # (event, resolver_name)
     resolver_results = {}
 
     for resolver in resolvers:
         try:
             events = resolver.detect_outcomes()
-            all_events.extend(events)
+            all_events.extend((e, resolver.name) for e in events)
             resolver_results[resolver.name] = {
                 "events": len(events),
                 "details": [
@@ -140,7 +154,7 @@ def resolve_outcomes(
     total_memories_rewarded = 0
     total_predictions_resolved = 0
 
-    for event in all_events:
+    for event, resolver_name in all_events:
         # 1. Resolve matching predictions
         if reward_tracker:
             pending = reward_tracker.get_pending_predictions(client_id=event.entity_id)
@@ -157,13 +171,34 @@ def resolve_outcomes(
         # 2. Find and reward tagged memories
         memory_ids = _find_memories_for_entity(event.entity_id)
         if memory_ids and q_updater:
+            reward_ctx = _build_outcome_reward_context(event)
+
+            # L3 cold storage
+            rwd_id = generate_reward_id()
+            log_reward_event(
+                reward_id=rwd_id,
+                reward_type="business",
+                reward=event.reward,
+                memory_ids=memory_ids,
+                context={
+                    "entity_id": event.entity_id,
+                    "event_name": event.event_name,
+                    "details": event.details,
+                    "resolver": resolver_name,
+                },
+                experience=experience,
+            )
+
             layer_rewards = compute_layer_rewards(event.reward)
             for mem_id in memory_ids:
-                q_updater.update_all_layers(mem_id, layer_rewards, experience=experience)
+                q_updater.update_all_layers(
+                    mem_id, layer_rewards, experience=experience,
+                    reward_context=reward_ctx, reward_id=rwd_id,
+                )
             total_memories_rewarded += len(memory_ids)
             logger.info(
-                "Event %s for %s: rewarded %d memories (reward=%.2f)",
-                event.event_name, event.entity_id, len(memory_ids), event.reward,
+                "Event %s for %s: rewarded %d memories (reward=%.2f, reward_id=%s)",
+                event.event_name, event.entity_id, len(memory_ids), event.reward, rwd_id,
             )
 
     return {

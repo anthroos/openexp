@@ -49,6 +49,31 @@ DEFAULT_Q_CONFIG = {
 # Q-value layer names
 Q_LAYERS = ("action", "hypothesis", "fit")
 
+# Reward context constants
+MAX_REWARD_CONTEXTS = 5
+MAX_CONTEXT_LENGTH = 120
+
+
+def _append_reward_context(
+    q_data: Dict, context: Optional[str], reward_id: Optional[str] = None,
+) -> None:
+    """Append a reward context string to q_data (FIFO, max MAX_REWARD_CONTEXTS).
+
+    No-op if context is None or empty. Creates reward_contexts list if missing.
+    If reward_id is provided, appends " [rwd_XXXXXXXX]" as L3 cold storage pointer.
+    Truncates final string to MAX_CONTEXT_LENGTH chars.
+    """
+    if not context:
+        return
+    if reward_id:
+        context = f"{context} [{reward_id}]"
+    contexts = q_data.setdefault("reward_contexts", [])
+    truncated = context[:MAX_CONTEXT_LENGTH]
+    contexts.append(truncated)
+    # FIFO eviction
+    while len(contexts) > MAX_REWARD_CONTEXTS:
+        contexts.pop(0)
+
 
 def compute_layer_rewards(reward: float) -> Dict[str, float]:
     """Compute per-layer rewards: action=full, hypothesis=discounted, fit=asymmetric."""
@@ -267,6 +292,8 @@ class QValueUpdater:
         layer: str = "action",
         next_max_q: Optional[float] = None,
         experience: str = "default",
+        reward_context: Optional[str] = None,
+        reward_id: Optional[str] = None,
     ) -> Dict[str, float]:
         """Apply additive Q-learning update to a specific Q-layer.
 
@@ -295,6 +322,7 @@ class QValueUpdater:
         q_data["last_reward"] = float(reward)
         q_data["last_layer_updated"] = layer
         q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+        _append_reward_context(q_data, reward_context, reward_id)
 
         self.cache.set(memory_id, q_data, experience)
         return q_data
@@ -304,6 +332,8 @@ class QValueUpdater:
         memory_id: str,
         rewards: Dict[str, float],
         experience: str = "default",
+        reward_context: Optional[str] = None,
+        reward_id: Optional[str] = None,
     ) -> Dict[str, float]:
         """Update multiple Q-layers at once (additive)."""
         q_data = self.cache.get(memory_id, experience) or self._default_q_data()
@@ -323,6 +353,7 @@ class QValueUpdater:
         q_data["q_value"] = self._combined_q(q_data)
         q_data["q_visits"] = q_data.get("q_visits", 0) + 1
         q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+        _append_reward_context(q_data, reward_context, reward_id)
 
         self.cache.set(memory_id, q_data, experience)
         return q_data
@@ -333,11 +364,16 @@ class QValueUpdater:
         reward: float,
         layer: str = "action",
         experience: str = "default",
+        reward_context: Optional[str] = None,
+        reward_id: Optional[str] = None,
     ) -> Dict[str, Dict[str, float]]:
         """Update Q-values for a batch of memories with the same reward."""
         results = {}
         for mem_id in memory_ids:
-            results[mem_id] = self.update(mem_id, reward, layer, experience=experience)
+            results[mem_id] = self.update(
+                mem_id, reward, layer, experience=experience,
+                reward_context=reward_context, reward_id=reward_id,
+            )
         return results
 
     def _combined_q(self, q_data: Dict[str, float]) -> float:

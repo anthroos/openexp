@@ -52,7 +52,7 @@ def ingest_session(
     """Full ingest pipeline: observations + sessions + reward."""
     from .observation import ingest_observations
     from .session_summary import ingest_sessions
-    from .reward import compute_session_reward, apply_session_reward, reward_retrieved_memories
+    from .reward import compute_session_reward, apply_session_reward, reward_retrieved_memories, _build_session_reward_context
 
     result = {}
 
@@ -75,18 +75,24 @@ def ingest_session(
     if point_ids and raw_obs:
         reward = compute_session_reward(raw_obs)
         if reward != 0.0:
-            updated = apply_session_reward(point_ids, reward)
+            reward_ctx = _build_session_reward_context(raw_obs, reward)
+            updated = apply_session_reward(
+                point_ids, reward, reward_context=reward_ctx,
+                observations=raw_obs, session_id=session_id,
+            )
             result["reward"] = {"applied": True, "value": reward, "updated": updated}
             logger.info("Session reward=%.2f applied to %d memories", reward, updated)
         else:
             result["reward"] = {"applied": False, "value": 0.0, "reason": "neutral session"}
+            reward_ctx = None
     else:
         result["reward"] = {"applied": False, "reason": "no new observations"}
+        reward_ctx = None
 
     if session_id:
         reward_val = result.get("reward", {}).get("value", 0.0)
         if reward_val and reward_val != 0.0:
-            retrieved_updated = reward_retrieved_memories(session_id, reward_val)
+            retrieved_updated = reward_retrieved_memories(session_id, reward_val, reward_context=reward_ctx)
             result["reward"]["retrieved_memories_rewarded"] = retrieved_updated
         else:
             result["reward"]["retrieved_memories_rewarded"] = 0

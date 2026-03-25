@@ -3,7 +3,10 @@ import json
 import tempfile
 from pathlib import Path
 
-from openexp.core.q_value import QCache, QValueUpdater, QValueScorer, _is_newer
+from openexp.core.q_value import (
+    QCache, QValueUpdater, QValueScorer, _is_newer,
+    _append_reward_context, MAX_REWARD_CONTEXTS, MAX_CONTEXT_LENGTH,
+)
 
 
 def test_qcache_basic():
@@ -161,3 +164,94 @@ def test_q_scorer_rerank_with_experience():
 
     assert sales_result[0]["q_estimate"] == 0.9
     assert default_result[0]["q_estimate"] == 0.1
+
+
+def test_append_reward_context_basic():
+    q_data = {"q_value": 0.5}
+    _append_reward_context(q_data, "Session +0.30: 2 commits")
+    assert q_data["reward_contexts"] == ["Session +0.30: 2 commits"]
+
+
+def test_append_reward_context_with_reward_id():
+    q_data = {"q_value": 0.5}
+    _append_reward_context(q_data, "Session +0.30: 2 commits", reward_id="rwd_abc12345")
+    assert q_data["reward_contexts"] == ["Session +0.30: 2 commits [rwd_abc12345]"]
+
+
+def test_append_reward_context_reward_id_none_no_pointer():
+    q_data = {"q_value": 0.5}
+    _append_reward_context(q_data, "Session +0.30: 2 commits", reward_id=None)
+    assert q_data["reward_contexts"] == ["Session +0.30: 2 commits"]
+    assert "[rwd_" not in q_data["reward_contexts"][0]
+
+
+def test_append_reward_context_fifo_eviction():
+    q_data = {"reward_contexts": [f"ctx_{i}" for i in range(MAX_REWARD_CONTEXTS)]}
+    _append_reward_context(q_data, "new_context")
+    assert len(q_data["reward_contexts"]) == MAX_REWARD_CONTEXTS
+    assert q_data["reward_contexts"][-1] == "new_context"
+    assert q_data["reward_contexts"][0] == "ctx_1"  # ctx_0 evicted
+
+
+def test_append_reward_context_none_noop():
+    q_data = {"q_value": 0.5}
+    _append_reward_context(q_data, None)
+    assert "reward_contexts" not in q_data
+    _append_reward_context(q_data, "")
+    assert "reward_contexts" not in q_data
+
+
+def test_append_reward_context_truncation():
+    q_data = {}
+    long_ctx = "x" * 200
+    _append_reward_context(q_data, long_ctx)
+    assert len(q_data["reward_contexts"][0]) == MAX_CONTEXT_LENGTH
+
+
+def test_q_updater_update_with_reward_context():
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+    result = updater.update("mem1", reward=0.8, reward_context="Session +0.30: 2 commits")
+    assert result["reward_contexts"] == ["Session +0.30: 2 commits"]
+
+
+def test_q_updater_update_all_layers_with_reward_context():
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+    result = updater.update_all_layers(
+        "mem1", {"action": 0.5, "hypothesis": 0.3, "fit": 0.4},
+        reward_context="Pred +0.80: deal closed",
+    )
+    assert result["reward_contexts"] == ["Pred +0.80: deal closed"]
+
+
+def test_q_updater_backward_compat_no_context():
+    """Without reward_context param, entries work as before (no reward_contexts key added)."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+    result = updater.update("mem1", reward=0.8)
+    assert "reward_contexts" not in result
+
+
+def test_qcache_save_load_with_contexts():
+    """reward_contexts survive save/load cycle."""
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "q_cache.json"
+
+        cache1 = QCache()
+        q_data = {"q_value": 0.7, "q_action": 0.8, "reward_contexts": ["ctx1", "ctx2"]}
+        cache1.set("x", q_data)
+        cache1.save(path)
+
+        cache2 = QCache()
+        cache2.load(path)
+        loaded = cache2.get("x")
+        assert loaded["reward_contexts"] == ["ctx1", "ctx2"]
+
+
+def test_q_updater_batch_with_reward_context():
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+    results = updater.batch_update(["a", "b"], reward=0.5, reward_context="Session +0.20: 1 commit")
+    assert results["a"]["reward_contexts"] == ["Session +0.20: 1 commit"]
+    assert results["b"]["reward_contexts"] == ["Session +0.20: 1 commit"]

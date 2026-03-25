@@ -221,8 +221,31 @@ TOOLS = [
             "properties": {
                 "memory_id": {"type": "string", "description": "Memory ID to calibrate"},
                 "q_value": {"type": "number", "description": "New Q-value [-0.5, 1.0]"},
+                "reward_context": {"type": "string", "description": "Optional explanation for this calibration"},
             },
             "required": ["memory_id", "q_value"],
+        },
+    },
+    {
+        "name": "memory_reward_history",
+        "description": "Show reward trail for a specific memory — Q-value, visits, reward contexts (L2), and full cold storage records (L3) for each reward event",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "Memory ID to inspect"},
+            },
+            "required": ["memory_id"],
+        },
+    },
+    {
+        "name": "reward_detail",
+        "description": "Get full context for a specific reward event from L3 cold storage. Use reward_id from memory_reward_history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "reward_id": {"type": "string", "description": "Reward ID (rwd_XXXXXXXX) from memory_reward_history"},
+            },
+            "required": ["reward_id"],
         },
     },
 ]
@@ -439,12 +462,16 @@ def handle_request(request: dict) -> dict:
             for mem_id, exp_dict in q_cache._cache.items():
                 q_data = exp_dict.get(exp_name)
                 if q_data:
-                    entries.append({
+                    entry = {
                         "memory_id": mem_id,
                         "q_value": q_data.get("q_value", 0.0),
                         "q_visits": q_data.get("q_visits", 0),
                         "last_reward": q_data.get("last_reward"),
-                    })
+                    }
+                    contexts = q_data.get("reward_contexts")
+                    if contexts:
+                        entry["reward_contexts"] = contexts
+                    entries.append(entry)
 
             entries.sort(key=lambda x: x["q_value"], reverse=not bottom)
             result = {
@@ -498,6 +525,8 @@ def handle_request(request: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         elif tool_name == "calibrate_experience_q":
+            from .core.reward_log import generate_reward_id, log_reward_event
+
             mem_id = args["memory_id"]
             new_q = _clamp(args["q_value"], -0.5, 1.0)
 
@@ -507,21 +536,90 @@ def handle_request(request: dict) -> dict:
                 "q_fit": 0.0,
                 "q_visits": 0,
             }
+            old_q = q_data.get("q_value", 0.0)
             q_data["q_value"] = new_q
             q_data["q_action"] = new_q
             q_data["q_hypothesis"] = new_q
             q_data["q_fit"] = new_q
             from datetime import datetime, timezone
             q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+
+            # L3 cold storage + L2 context with reward_id
+            cal_ctx = args.get("reward_context")
+            rwd_id = generate_reward_id()
+            log_reward_event(
+                reward_id=rwd_id,
+                reward_type="calibration",
+                reward=new_q,
+                memory_ids=[mem_id],
+                context={
+                    "old_q_value": old_q,
+                    "new_q_value": new_q,
+                    "reason": cal_ctx,
+                },
+                experience=exp_name,
+            )
+            if cal_ctx:
+                from .core.q_value import _append_reward_context
+                _append_reward_context(q_data, f"Cal {new_q:.2f}: {cal_ctx}", rwd_id)
             q_cache.set(mem_id, q_data, exp_name)
 
             result = {
                 "memory_id": mem_id,
                 "experience": exp_name,
                 "new_q_value": new_q,
+                "reward_id": rwd_id,
                 "status": "calibrated",
             }
             return {"content": [{"type": "text", "text": json.dumps(result)}]}
+
+        elif tool_name == "memory_reward_history":
+            from .core.reward_log import get_reward_history
+            import re
+
+            mem_id = args["memory_id"]
+            q_data = q_cache.get(mem_id, exp_name)
+            if q_data is None:
+                result = {"memory_id": mem_id, "experience": exp_name, "error": "not_found"}
+            else:
+                # Extract reward_ids from L2 contexts
+                contexts = q_data.get("reward_contexts", [])
+                reward_ids = []
+                for ctx in contexts:
+                    match = re.search(r'\[(rwd_[0-9a-f]+)\]', ctx)
+                    if match:
+                        reward_ids.append(match.group(1))
+
+                # Get L3 cold storage records for this memory
+                cold_records = get_reward_history(mem_id)
+
+                result = {
+                    "memory_id": mem_id,
+                    "experience": exp_name,
+                    "q_value": q_data.get("q_value", 0.0),
+                    "q_action": q_data.get("q_action", 0.0),
+                    "q_hypothesis": q_data.get("q_hypothesis", 0.0),
+                    "q_fit": q_data.get("q_fit", 0.0),
+                    "q_visits": q_data.get("q_visits", 0),
+                    "last_reward": q_data.get("last_reward"),
+                    "q_updated_at": q_data.get("q_updated_at"),
+                    "reward_contexts": contexts,
+                    "reward_ids": reward_ids,
+                    "cold_storage_records": len(cold_records),
+                    "cold_storage": cold_records[-5:] if cold_records else [],
+                }
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "reward_detail":
+            from .core.reward_log import get_reward_detail
+
+            rwd_id = args["reward_id"]
+            record = get_reward_detail(rwd_id)
+            if record is None:
+                result = {"reward_id": rwd_id, "error": "not_found"}
+            else:
+                result = record
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")
 
