@@ -67,7 +67,9 @@ Over time, this creates a natural ranking where useful memories (project convent
 
 ## Reward Signals
 
-### Session-Level (Fallback)
+Reward weights are defined by the active **Experience**. The `default` experience rewards coding; `sales` rewards emails and follow-ups; `dealflow` rewards proposals, invoices, and payments. See [Experiences](experiences.md) for full details and how to create your own.
+
+### Session-Level (Default Experience)
 
 | Signal | Reward | Why |
 |--------|--------|-----|
@@ -77,6 +79,10 @@ Over time, this creates a natural ranking where useful memories (project convent
 | Tests passed | +0.1 | Quality verified |
 | Deploy | +0.1 | Shipped to production |
 | Decision made | +0.1 | Strategic progress |
+| Email sent | +0.0 (default) / +0.15 (sales/dealflow) | Outreach activity |
+| Proposal sent | +0.0 (default) / +0.25 (dealflow) | Deal advancement |
+| Invoice sent | +0.0 (default) / +0.20 (dealflow) | Revenue generation |
+| Payment received | +0.0 (default) / +0.30 (dealflow) | Terminal business reward |
 | No writes + no commits | -0.1 | Unproductive session |
 | Abandoned (< 3 obs) | -0.05 | Session didn't accomplish anything |
 | Base | -0.1 | Must earn positive |

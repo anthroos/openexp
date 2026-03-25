@@ -37,6 +37,14 @@ OpenExp uses Qdrant as its vector database. The setup script starts it via Docke
 
 Without `ANTHROPIC_API_KEY`, memories are stored with basic metadata. The system works well without enrichment — it just won't auto-categorize memory types or extract tags.
 
+### Experiences
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENEXP_EXPERIENCE` | `default` | Active experience profile (`default`, `sales`, `dealflow`, or custom) |
+| `OPENEXP_EXPERIENCES_DIR` | `~/.openexp/experiences` | Directory for user-created experience YAML files |
+
+See [Experiences Guide](experiences.md) for details on creating custom experiences.
+
 ### Ingest Pipeline
 | Variable | Default | Description |
 |----------|---------|-------------|

@@ -71,6 +71,18 @@ def compute_session_reward(
     if any("follow" in s.lower() and "up" in s.lower() for s in summaries):
         score += weights.get("follow_up", 0.0)
 
+    # Dealflow signals
+    if any("proposal" in s.lower() for s in summaries):
+        score += weights.get("proposal_sent", 0.0)
+    if any("invoice" in s.lower() for s in summaries):
+        score += weights.get("invoice_sent", 0.0)
+    if any("calendar" in s.lower() or "scheduled" in s.lower() for s in summaries):
+        score += weights.get("call_scheduled", 0.0)
+    if any("nda" in s.lower() or "agreement" in s.lower() for s in summaries):
+        score += weights.get("nda_exchanged", 0.0)
+    if any("payment" in s.lower() and "received" in s.lower() for s in summaries):
+        score += weights.get("payment_received", 0.0)
+
     return max(-0.5, min(0.5, score))
 
 
