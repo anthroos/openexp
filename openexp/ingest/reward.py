@@ -83,6 +83,22 @@ def compute_session_reward(
     if any("payment" in s.lower() and "received" in s.lower() for s in summaries):
         score += weights.get("payment_received", 0.0)
 
+    # Communication signals
+    if any("telegram" in s.lower() and "sent" in s.lower() for s in summaries):
+        score += weights.get("telegram_sent", 0.0)
+    if any("slack" in s.lower() and ("sent" in s.lower() or "post" in s.lower()) for s in summaries):
+        score += weights.get("slack_sent", 0.0)
+
+    # Engineering signals
+    if any("gh pr" in s and "merge" in s.lower() for s in summaries):
+        score += weights.get("pr_merged", 0.0)
+    if any("ticket" in s.lower() and ("closed" in s.lower() or "resolved" in s.lower()) for s in summaries):
+        score += weights.get("ticket_closed", 0.0)
+    if any("review" in s.lower() and ("approved" in s.lower() or "lgtm" in s.lower()) for s in summaries):
+        score += weights.get("review_approved", 0.0)
+    if any("release" in s.lower() and ("tag" in s.lower() or "publish" in s.lower() or "v" in s.lower()) for s in summaries):
+        score += weights.get("release", 0.0)
+
     return max(-0.5, min(0.5, score))
 
 

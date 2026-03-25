@@ -222,6 +222,12 @@ These are the signals OpenExp can detect from Claude Code sessions:
 | `call_scheduled` | `"calendar"` or `"scheduled"` in tool output | Created calendar event |
 | `nda_exchanged` | `"nda"` or `"agreement"` in tool output | Reviewed and signed NDA |
 | `payment_received` | `"payment"` + `"received"` in tool output | Payment $3120 received |
+| `telegram_sent` | `"telegram"` + `"sent"` in tool output | Sent Telegram DM to client |
+| `slack_sent` | `"slack"` + `"sent"` or `"post"` in tool output | Posted in Slack channel |
+| `pr_merged` | `"gh pr"` + `"merge"` in tool output | `gh pr merge 42 --squash` |
+| `ticket_closed` | `"ticket"` + `"closed"` or `"resolved"` in tool output | Closed JIRA ticket |
+| `review_approved` | `"review"` + `"approved"` or `"lgtm"` in tool output | PR review approved |
+| `release` | `"release"` + `"tag"` or `"publish"` in tool output | `gh release create v1.0` |
 
 ### Adding Custom Signals
 
