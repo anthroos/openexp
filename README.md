@@ -155,7 +155,7 @@ The MCP server provides 16 tools for memory operations, introspection, and calib
 
 ### Q-Learning Details
 
-Every memory has a Q-value (starts at 0.5). Three layers capture different aspects:
+Every memory has a Q-value (starts at 0.0 — earn value from zero). Three layers capture different aspects:
 
 | Layer | Weight | Measures |
 |-------|--------|----------|
@@ -166,10 +166,11 @@ Every memory has a Q-value (starts at 0.5). Three layers capture different aspec
 Update rule:
 
 ```
-Q_new = (1 - α) × Q_old + α × reward
+Q_new = clamp(Q_old + α × reward, floor, ceiling)
 
 α = 0.25 (learning rate)
-reward ∈ [-0.5, 0.5] (session productivity signal)
+reward ∈ [-1.0, 1.0] (productivity signal)
+floor = -0.5, ceiling = 1.0
 ```
 
 Retrieval scoring combines five signals:
