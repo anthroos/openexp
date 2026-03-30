@@ -1,8 +1,8 @@
 <p align="center">
   <h1 align="center">OpenExp</h1>
   <p align="center">
-    <strong>Self-labeling experience engine for AI agents</strong><br>
-    Define your process. Outcomes label your data. AI learns what works.
+    <strong>Skills tell your AI how. OpenExp teaches it what works.</strong><br>
+    Outcome-based learning for AI agents. Q-learning memory that gets smarter with every session.
   </p>
 </p>
 
@@ -25,11 +25,15 @@
 
 ---
 
-Memory tools store and retrieve. OpenExp **learns which memories actually help you get work done** — and surfaces those first next time.
+You wrote a skill: "how to work with CRM." Your agent follows it perfectly. But it doesn't know that approach A closed deals and approach B didn't. Tomorrow it'll do the same thing as yesterday — even if yesterday didn't work.
 
-You define your process (software dev, sales, support, content). Every outcome — commit, closed deal, resolved ticket — feeds back as a reward signal. Over time, proven memories rank higher. Noise sinks.
+**Skills say *how*. OpenExp teaches *what works*.**
 
-### How it works for a sales team
+Every outcome — commit, closed deal, resolved ticket — feeds back as a reward signal. Memories that led to results get higher Q-values and surface first next time. Noise sinks.
+
+### Example: sales agent
+
+Your agent sent 200 emails this month. Which formulations got replies? Which approaches closed deals? Skills don't know — there's no feedback loop.
 
 ```yaml
 # .openexp.yaml in your sales project
@@ -43,11 +47,13 @@ experience: sales
 4. Next similar deal → the insights that led to the close surface first
 ```
 
-The same idea behind AlphaGo, applied to your AI agent's working memory.
+After a month, your agent "knows" not just how to write emails — but which emails lead to results.
 
 ## The Problem
 
-AI agents forget everything between sessions. Existing memory tools (Mem0, Zep, LangMem) just store and retrieve — every memory is equally important. A two-month-old note about a deleted feature has the same weight as yesterday's critical architecture decision.
+Skills and CLAUDE.md solve the "agent doesn't remember" problem. But they're **static instructions** — written once, never learning from outcomes. Your agent follows the playbook perfectly, but doesn't know which plays actually work.
+
+Existing memory tools (Mem0, Zep, LangMem) add storage — but every memory is equally important. A two-month-old note about a deleted feature has the same weight as yesterday's critical architecture decision.
 
 **The missing piece:** there's no learning. No feedback loop from outcomes to retrieval quality.
 
@@ -97,7 +103,7 @@ After a few sessions, OpenExp learns what context actually helps you get work do
 | **Hybrid retrieval** | BM25 + vector + recency + importance + Q-value (5 signals) | Vector only | Graph + vector | Vector only |
 | **Privacy** | All data stays on your machine | Data sent to cloud | Depends on setup | Data sent to cloud |
 
-**The key difference:** other memory tools store and retrieve. OpenExp **learns which memories actually help you get work done** — and surfaces those first next time.
+**The key difference:** skills say how. Memory tools store. OpenExp **learns what works** — from real outcomes.
 
 ## Quick Start
 
