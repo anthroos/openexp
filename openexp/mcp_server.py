@@ -248,6 +248,18 @@ TOOLS = [
             "required": ["reward_id"],
         },
     },
+    {
+        "name": "explain_q",
+        "description": "Get human-readable explanation of why a memory has its current Q-value. Aggregates all L4 explanations from reward history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "Memory ID to explain"},
+                "regenerate": {"type": "boolean", "default": False, "description": "Force regenerate explanation via LLM"},
+            },
+            "required": ["memory_id"],
+        },
+    },
 ]
 
 
@@ -526,6 +538,7 @@ def handle_request(request: dict) -> dict:
 
         elif tool_name == "calibrate_experience_q":
             from .core.reward_log import generate_reward_id, log_reward_event
+            from .core.explanation import generate_reward_explanation, _fetch_memory_contents
 
             mem_id = args["memory_id"]
             new_q = _clamp(args["q_value"], -0.5, 1.0)
@@ -547,17 +560,31 @@ def handle_request(request: dict) -> dict:
             # L3 cold storage + L2 context with reward_id
             cal_ctx = args.get("reward_context")
             rwd_id = generate_reward_id()
+            cold_context = {
+                "old_q_value": old_q,
+                "new_q_value": new_q,
+                "reason": cal_ctx,
+            }
+
+            # L4: generate explanation
+            explanation = generate_reward_explanation(
+                reward_type="calibration",
+                reward=new_q,
+                context=cold_context,
+                memory_contents=_fetch_memory_contents([mem_id]),
+                q_before=old_q,
+                q_after=new_q,
+                experience=exp_name,
+            )
+
             log_reward_event(
                 reward_id=rwd_id,
                 reward_type="calibration",
                 reward=new_q,
                 memory_ids=[mem_id],
-                context={
-                    "old_q_value": old_q,
-                    "new_q_value": new_q,
-                    "reason": cal_ctx,
-                },
+                context=cold_context,
                 experience=exp_name,
+                explanation=explanation,
             )
             if cal_ctx:
                 from .core.q_value import _append_reward_context
@@ -619,6 +646,70 @@ def handle_request(request: dict) -> dict:
                 result = {"reward_id": rwd_id, "error": "not_found"}
             else:
                 result = record
+            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "explain_q":
+            from .core.reward_log import get_reward_history
+            from .core.explanation import generate_reward_explanation, _fetch_memory_contents
+
+            mem_id = args["memory_id"]
+            regenerate = args.get("regenerate", False)
+
+            q_data = q_cache.get(mem_id, exp_name)
+            if q_data is None:
+                result = {"memory_id": mem_id, "experience": exp_name, "error": "not_found"}
+                return {"content": [{"type": "text", "text": json.dumps(result)}]}
+
+            cold_records = get_reward_history(mem_id)
+
+            # Collect existing L4 explanations
+            explanations = []
+            for rec in cold_records:
+                expl = rec.get("explanation")
+                if expl:
+                    explanations.append({
+                        "reward_id": rec.get("reward_id"),
+                        "reward_type": rec.get("reward_type"),
+                        "reward": rec.get("reward"),
+                        "timestamp": rec.get("timestamp"),
+                        "explanation": expl,
+                    })
+
+            # Regenerate overall summary if requested
+            overall_summary = None
+            if regenerate and cold_records:
+                memory_contents = _fetch_memory_contents([mem_id])
+                # Build combined context from all records
+                combined_context = {
+                    "total_events": len(cold_records),
+                    "reward_types": list(set(r.get("reward_type", "") for r in cold_records)),
+                    "total_reward": sum(r.get("reward", 0) for r in cold_records),
+                    "events_summary": [
+                        {"type": r.get("reward_type"), "reward": r.get("reward"), "ts": r.get("timestamp")}
+                        for r in cold_records[-10:]
+                    ],
+                }
+                overall_summary = generate_reward_explanation(
+                    reward_type="summary",
+                    reward=sum(r.get("reward", 0) for r in cold_records),
+                    context=combined_context,
+                    memory_contents=memory_contents,
+                    q_after=q_data.get("q_value", 0.0),
+                    experience=exp_name,
+                )
+
+            result = {
+                "memory_id": mem_id,
+                "experience": exp_name,
+                "q_value": q_data.get("q_value", 0.0),
+                "q_visits": q_data.get("q_visits", 0),
+                "total_reward_events": len(cold_records),
+                "explanations": explanations,
+                "reward_contexts": q_data.get("reward_contexts", []),
+            }
+            if overall_summary:
+                result["overall_summary"] = overall_summary
+
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
 
         raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")

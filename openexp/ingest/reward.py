@@ -7,6 +7,7 @@ import logging
 from typing import Dict, List, Optional
 
 from ..core.config import Q_CACHE_PATH
+from ..core.explanation import generate_reward_explanation, _fetch_memory_contents
 from ..core.q_value import QCache, QValueUpdater, compute_layer_rewards
 from ..core.reward_log import generate_reward_id, log_reward_event, compact_observation
 
@@ -172,14 +173,9 @@ def apply_session_reward(
     if session_id:
         cold_context["session_id"] = session_id
 
-    log_reward_event(
-        reward_id=rwd_id,
-        reward_type="session",
-        reward=reward,
-        memory_ids=point_ids,
-        context=cold_context,
-        experience=experience,
-    )
+    # L4: read first memory's Q before update
+    first_q_data = q_cache.get(point_ids[0], experience)
+    q_before = first_q_data.get("q_value", 0.0) if first_q_data else None
 
     updater = QValueUpdater(cache=q_cache)
     layer_rewards = compute_layer_rewards(reward)
@@ -189,6 +185,31 @@ def apply_session_reward(
             mem_id, layer_rewards, experience=experience,
             reward_context=reward_context, reward_id=rwd_id,
         )
+
+    # L4: read first memory's Q after update
+    first_q_after = q_cache.get(point_ids[0], experience)
+    q_after = first_q_after.get("q_value", 0.0) if first_q_after else None
+
+    # L4: generate explanation with q_before/q_after
+    explanation = generate_reward_explanation(
+        reward_type="session",
+        reward=reward,
+        context=cold_context,
+        memory_contents=_fetch_memory_contents(point_ids[:5]),
+        q_before=q_before,
+        q_after=q_after,
+        experience=experience,
+    )
+
+    log_reward_event(
+        reward_id=rwd_id,
+        reward_type="session",
+        reward=reward,
+        memory_ids=point_ids,
+        context=cold_context,
+        experience=experience,
+        explanation=explanation,
+    )
 
     q_cache.save(Q_CACHE_PATH)
     logger.info("Applied session reward=%.2f to %d memories (experience=%s, reward_id=%s)", reward, len(updated), experience, rwd_id)
