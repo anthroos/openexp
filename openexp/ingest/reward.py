@@ -221,14 +221,41 @@ def reward_retrieved_memories(
     reward: float,
     experience: str = "default",
     reward_context: Optional[str] = None,
+    reward_memory_types: Optional[List[str]] = None,
 ) -> int:
     """Reward memories that were retrieved at session start.
 
     Closes the loop: memories retrieved -> session outcome -> Q-value update.
+
+    If reward_memory_types is set, only memories of those types receive reward.
+    Empty list = reward all (preserves current behavior).
     """
     from .retrieval_log import get_session_retrievals
 
     memory_ids = get_session_retrievals(session_id)
+    if not memory_ids:
+        return 0
+
+    # Filter by memory type if configured
+    if reward_memory_types:
+        try:
+            from ..core.direct_search import _get_qdrant
+            client = _get_qdrant()
+            from ..core.config import COLLECTION_NAME
+            points = client.retrieve(collection_name=COLLECTION_NAME, ids=memory_ids, with_payload=True)
+            filtered = [
+                p.id for p in points
+                if p.payload.get("memory_type", "fact") in reward_memory_types
+            ]
+            if filtered != memory_ids:
+                logger.info(
+                    "Memory type filter: %d/%d memories match types %s",
+                    len(filtered), len(memory_ids), reward_memory_types,
+                )
+            memory_ids = filtered
+        except Exception as e:
+            logger.warning("Failed to filter by memory type, rewarding all: %s", e)
+
     if not memory_ids:
         return 0
 

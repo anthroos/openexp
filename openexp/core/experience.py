@@ -25,6 +25,15 @@ _BUNDLED_DIR = Path(__file__).parent.parent / "data" / "experiences"
 
 
 @dataclass
+class ProcessStage:
+    """A stage in a business process pipeline."""
+
+    name: str
+    description: str = ""
+    reward_on_enter: float = 0.0
+
+
+@dataclass
 class Experience:
     """A domain-specific Q-value context."""
 
@@ -34,6 +43,8 @@ class Experience:
     outcome_resolvers: List[str] = field(default_factory=list)
     retrieval_boosts: Dict[str, float] = field(default_factory=dict)
     q_config_overrides: Dict[str, float] = field(default_factory=dict)
+    process_stages: List[ProcessStage] = field(default_factory=list)
+    reward_memory_types: List[str] = field(default_factory=list)
 
 
 DEFAULT_EXPERIENCE = Experience(
@@ -62,11 +73,32 @@ def _user_experiences_dir() -> Path:
     return EXPERIENCES_DIR
 
 
+def _parse_process_stages(raw: list) -> List[ProcessStage]:
+    """Parse process_stages from YAML — supports dict and string formats."""
+    stages = []
+    for item in raw:
+        if isinstance(item, dict):
+            stages.append(ProcessStage(
+                name=item.get("name", ""),
+                description=item.get("description", ""),
+                reward_on_enter=float(item.get("reward_on_enter", 0.0)),
+            ))
+        elif isinstance(item, str):
+            stages.append(ProcessStage(name=item))
+        else:
+            logger.warning("Skipping invalid process_stage entry: %s", item)
+    return stages
+
+
 def _parse_yaml(path: Path) -> Experience:
     """Parse a YAML file into an Experience."""
     data = yaml.safe_load(path.read_text())
     if not isinstance(data, dict):
         raise ValueError(f"Invalid experience YAML: {path}")
+
+    raw_stages = data.get("process_stages", [])
+    process_stages = _parse_process_stages(raw_stages) if raw_stages else []
+
     return Experience(
         name=data.get("name", path.stem),
         description=data.get("description", ""),
@@ -74,6 +106,8 @@ def _parse_yaml(path: Path) -> Experience:
         outcome_resolvers=data.get("outcome_resolvers", []),
         retrieval_boosts=data.get("retrieval_boosts", {}),
         q_config_overrides=data.get("q_config_overrides", {}),
+        process_stages=process_stages,
+        reward_memory_types=data.get("reward_memory_types", []),
     )
 
 

@@ -29,3 +29,32 @@ retrieval_boosts:
   fact: 1.1
 q_config_overrides:
   alpha: 0.30
+
+process_stages:
+  - name: lead
+    description: Inbound or outbound lead
+    reward_on_enter: 0.0
+  - name: discovery
+    description: Initial call or meeting to understand needs
+    reward_on_enter: 0.1
+  - name: nda
+    description: NDA exchanged
+    reward_on_enter: 0.15
+  - name: proposal
+    description: Proposal sent with pricing
+    reward_on_enter: 0.25
+  - name: negotiation
+    description: Negotiating terms, SOW, timeline
+    reward_on_enter: 0.3
+  - name: invoice
+    description: Invoice sent
+    reward_on_enter: 0.5
+  - name: paid
+    description: Payment received — terminal reward
+    reward_on_enter: 0.8
+
+# Dealflow: decisions and insights drive deals, not raw tool usage
+reward_memory_types:
+  - decision
+  - insight
+  - outcome

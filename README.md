@@ -1,8 +1,8 @@
 <p align="center">
   <h1 align="center">OpenExp</h1>
   <p align="center">
-    <strong>Q-learning memory for Claude Code</strong><br>
-    Your AI learns from experience.
+    <strong>Self-labeling experience engine for AI agents</strong><br>
+    Define your process. Outcomes label your data. AI learns what works.
   </p>
 </p>
 
@@ -25,17 +25,31 @@
 
 ---
 
-Every Claude Code session starts from zero. OpenExp changes that.
+Memory tools store and retrieve. OpenExp **learns which memories actually help you get work done** — and surfaces those first next time.
 
-It gives Claude Code **persistent memory that learns**. Not just storage — actual reinforcement learning. Memories that lead to productive sessions (commits, PRs, passing tests) get higher Q-values and surface first next time. Bad memories sink.
+You define your process (software dev, sales, support, content). Every outcome — commit, closed deal, resolved ticket — feeds back as a reward signal. Over time, proven memories rank higher. Noise sinks.
 
-The same idea behind AlphaGo, applied to your coding assistant's context window.
+### How it works for a sales team
+
+```yaml
+# .openexp.yaml in your sales project
+experience: sales
+```
+
+```
+1. Define your pipeline:  lead → contacted → qualified → proposal → won
+2. Work normally — Claude remembers client preferences, deal context, pricing
+3. Deal closes → all memories tagged with that client get rewarded
+4. Next similar deal → the insights that led to the close surface first
+```
+
+The same idea behind AlphaGo, applied to your AI agent's working memory.
 
 ## The Problem
 
-Claude Code forgets everything between sessions. You re-explain your project structure, your preferences, your past decisions — every single time.
+AI agents forget everything between sessions. Existing memory tools (Mem0, Zep, LangMem) just store and retrieve — every memory is equally important. A two-month-old note about a deleted feature has the same weight as yesterday's critical architecture decision.
 
-Existing memory tools just store and retrieve. They treat a two-month-old note about a deleted feature the same as yesterday's critical architecture decision.
+**The missing piece:** there's no learning. No feedback loop from outcomes to retrieval quality.
 
 ## The Solution
 
@@ -44,9 +58,9 @@ OpenExp adds a **closed-loop learning system**:
 ```
 Session starts → recall memories (ranked by Q-value)
     ↓
-Claude works → observations captured automatically
+Agent works → observations captured automatically
     ↓
-Session ends → productive? (commits, PRs, tests)
+Session ends → productive? (commits, PRs, closed deals, resolved tickets)
     ↓
     YES → reward recalled memories (Q-values go up)
     NO  → penalize them (Q-values go down)
@@ -68,17 +82,16 @@ CRM: Acme deal moves negotiation → won
 resolve_outcomes → finds memories tagged comp-acme → reward +0.8
 ```
 
-This creates a much stronger learning signal than "did this session have git commits?"
-
 After a few sessions, OpenExp learns what context actually helps you get work done.
 
 ## Why OpenExp?
 
 | Feature | OpenExp | Mem0 | Zep/Graphiti | LangMem |
 |---------|---------|------|-------------|---------|
-| **Q-learning on memories** | Yes — memories earn/lose rank from session outcomes | No | No | No |
-| **Closed-loop rewards** | Session productivity → Q-value updates automatically | No | No | No |
-| **Outcome-based rewards** | Real business events (CRM, deployments) → targeted rewards | No | No | No |
+| **Learns from outcomes** | Yes — Q-learning from real business results | No | No | No |
+| **Process-aware** | Define pipeline stages with reward signals | No | No | No |
+| **Memory type filtering** | Reward only decisions/insights, not noise | No | No | No |
+| **Outcome-based rewards** | CRM deal closes → tagged memories get rewarded | No | No | No |
 | **Claude Code native** | Zero-config hooks, works out of the box | Requires integration | Requires integration | Requires integration |
 | **Local-first** | Qdrant + FastEmbed, no cloud, no API key for core | Cloud API | Cloud or self-hosted | Cloud API |
 | **Hybrid retrieval** | BM25 + vector + recency + importance + Q-value (5 signals) | Vector only | Graph + vector | Vector only |
@@ -386,22 +399,31 @@ openexp ingest             # ingest into Qdrant
 openexp stats              # check Q-cache state
 ```
 
-## Experiences
+## Experiences — Define Your Process
 
-Not everyone writes code. OpenExp ships with three **Experiences** — domain-specific reward profiles:
+Not everyone writes code. An **Experience** defines what "productive" means for your workflow, including pipeline stages and which memory types matter.
 
-| Experience | Optimized For | Top Signals |
-|------------|--------------|-------------|
-| `default` | Software engineering | commits, PRs, tests |
-| `sales` | Sales & outreach | decisions, emails, follow-ups |
-| `dealflow` | Deal pipeline (lead → payment) | proposals, invoices, payments |
+| Experience | Process | Top Signals |
+|------------|---------|-------------|
+| `default` | backlog → in_progress → review → merged → deployed | commits, PRs, tests |
+| `sales` | lead → contacted → qualified → proposal → negotiation → won | decisions, emails, follow-ups |
+| `dealflow` | lead → discovery → nda → proposal → negotiation → invoice → paid | proposals, invoices, payments |
 
 Switch with one env var:
 ```bash
 export OPENEXP_EXPERIENCE=dealflow
 ```
 
-**Create your own** — answer a questionnaire, get a YAML. See the [Experiences Guide](docs/experiences.md).
+Each experience also controls **which memory types get rewarded** — sales rewards decisions and insights, not raw tool actions. This means the system learns faster because it focuses on the signal, not the noise.
+
+**Create your own** with the interactive wizard:
+```bash
+openexp experience create
+# Pick a process type (dev/sales/support/content)
+# Customize stages, signal weights, memory type filters
+```
+
+See the [Experiences Guide](docs/experiences.md) for full details.
 
 ## Documentation
 

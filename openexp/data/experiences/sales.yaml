@@ -17,3 +17,29 @@ retrieval_boosts:
   outcome: 1.1
 q_config_overrides:
   alpha: 0.3
+
+process_stages:
+  - name: lead
+    description: New lead identified
+    reward_on_enter: 0.0
+  - name: contacted
+    description: Initial outreach sent
+    reward_on_enter: 0.1
+  - name: qualified
+    description: Lead confirmed as viable opportunity
+    reward_on_enter: 0.2
+  - name: proposal
+    description: Proposal or quote sent
+    reward_on_enter: 0.3
+  - name: negotiation
+    description: Active negotiation on terms
+    reward_on_enter: 0.4
+  - name: won
+    description: Deal closed, payment expected
+    reward_on_enter: 0.8
+
+# Sales process: focus on decisions and insights, not raw actions
+reward_memory_types:
+  - decision
+  - insight
+  - outcome

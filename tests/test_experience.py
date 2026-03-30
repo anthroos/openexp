@@ -8,11 +8,13 @@ import pytest
 
 from openexp.core.experience import (
     Experience,
+    ProcessStage,
     DEFAULT_EXPERIENCE,
     load_experience,
     get_active_experience,
     list_experiences,
     _parse_yaml,
+    _parse_process_stages,
 )
 from openexp.core.q_value import (
     QCache,
@@ -320,3 +322,161 @@ def test_compute_session_reward_with_weights():
     }
     reward_sales = compute_session_reward(observations, weights=sales_weights)
     assert isinstance(reward_sales, float)
+
+
+# --- ProcessStage parsing ---
+
+def test_parse_process_stages_dict_format():
+    raw = [
+        {"name": "lead", "description": "New lead", "reward_on_enter": 0.1},
+        {"name": "won", "description": "Deal closed", "reward_on_enter": 0.8},
+    ]
+    stages = _parse_process_stages(raw)
+    assert len(stages) == 2
+    assert stages[0].name == "lead"
+    assert stages[0].description == "New lead"
+    assert stages[0].reward_on_enter == 0.1
+    assert stages[1].reward_on_enter == 0.8
+
+
+def test_parse_process_stages_string_format():
+    raw = ["backlog", "in_progress", "done"]
+    stages = _parse_process_stages(raw)
+    assert len(stages) == 3
+    assert stages[0].name == "backlog"
+    assert stages[0].description == ""
+    assert stages[0].reward_on_enter == 0.0
+
+
+def test_parse_process_stages_mixed_format():
+    raw = [
+        "lead",
+        {"name": "won", "reward_on_enter": 0.8},
+    ]
+    stages = _parse_process_stages(raw)
+    assert len(stages) == 2
+    assert stages[0].name == "lead"
+    assert stages[1].name == "won"
+    assert stages[1].reward_on_enter == 0.8
+
+
+def test_parse_process_stages_empty():
+    assert _parse_process_stages([]) == []
+
+
+# --- reward_memory_types ---
+
+def test_reward_memory_types_from_yaml(tmp_path, monkeypatch):
+    yaml_content = """
+name: filtered
+description: Test with reward_memory_types
+session_reward_weights:
+  commit: 0.3
+reward_memory_types:
+  - decision
+  - insight
+"""
+    (tmp_path / "filtered.yaml").write_text(yaml_content)
+    monkeypatch.setattr("openexp.core.config.EXPERIENCES_DIR", tmp_path)
+
+    exp = load_experience("filtered")
+    assert exp.reward_memory_types == ["decision", "insight"]
+
+
+def test_reward_memory_types_default_empty(tmp_path, monkeypatch):
+    """Old YAML without reward_memory_types should default to empty list."""
+    yaml_content = """
+name: old_format
+description: No reward_memory_types field
+session_reward_weights:
+  commit: 0.3
+"""
+    (tmp_path / "old_format.yaml").write_text(yaml_content)
+    monkeypatch.setattr("openexp.core.config.EXPERIENCES_DIR", tmp_path)
+
+    exp = load_experience("old_format")
+    assert exp.reward_memory_types == []
+
+
+# --- Backward compat: old YAML without new fields ---
+
+def test_backward_compat_old_yaml(tmp_path, monkeypatch):
+    """YAML without process_stages and reward_memory_types loads fine."""
+    yaml_content = """
+name: legacy
+description: Old format experience
+session_reward_weights:
+  commit: 0.3
+  pr: 0.2
+outcome_resolvers: []
+retrieval_boosts: {}
+q_config_overrides: {}
+"""
+    (tmp_path / "legacy.yaml").write_text(yaml_content)
+    monkeypatch.setattr("openexp.core.config.EXPERIENCES_DIR", tmp_path)
+
+    exp = load_experience("legacy")
+    assert exp.name == "legacy"
+    assert exp.process_stages == []
+    assert exp.reward_memory_types == []
+    assert exp.session_reward_weights["commit"] == 0.3
+
+
+# --- Bundled YAMLs have process_stages ---
+
+def test_bundled_sales_has_process_stages():
+    exp = load_experience("sales")
+    assert len(exp.process_stages) > 0
+    stage_names = [s.name for s in exp.process_stages]
+    assert "lead" in stage_names
+    assert "won" in stage_names
+
+
+def test_bundled_dealflow_has_process_stages():
+    exp = load_experience("dealflow")
+    assert len(exp.process_stages) > 0
+    stage_names = [s.name for s in exp.process_stages]
+    assert "lead" in stage_names
+    assert "paid" in stage_names
+
+
+def test_bundled_sales_has_reward_memory_types():
+    exp = load_experience("sales")
+    assert "decision" in exp.reward_memory_types
+    assert "outcome" in exp.reward_memory_types
+
+
+# --- Integration: ingest_session passes experience weights ---
+
+def test_ingest_session_uses_experience_weights(tmp_path, monkeypatch):
+    """Verify ingest_session passes experience weights to compute_session_reward."""
+    from unittest.mock import patch, MagicMock
+
+    # Mock the ingest sub-functions
+    with patch("openexp.ingest.observation.ingest_observations") as mock_obs, \
+         patch("openexp.ingest.session_summary.ingest_sessions") as mock_sess, \
+         patch("openexp.ingest.reward.compute_session_reward") as mock_reward, \
+         patch("openexp.core.experience.get_active_experience") as mock_exp:
+
+        # Set up mocks
+        mock_obs.return_value = {"ingested": 0, "_point_ids": [], "_raw_observations": [
+            {"summary": "email sent to client", "tool": "Bash", "session_id": "sess-123"},
+        ]}
+        mock_sess.return_value = {"ingested": 0}
+        mock_reward.return_value = 0.0  # neutral, so no further calls needed
+
+        sales_exp = Experience(
+            name="sales",
+            description="test",
+            session_reward_weights={"email_sent": 0.15, "base": -0.05},
+        )
+        mock_exp.return_value = sales_exp
+
+        from openexp.ingest import ingest_session
+        ingest_session(session_id="sess-123")
+
+        # Verify compute_session_reward was called with experience weights
+        mock_reward.assert_called_once()
+        call_kwargs = mock_reward.call_args
+        # weights= should be the experience weights, not None/defaults
+        assert call_kwargs[1]["weights"] == {"email_sent": 0.15, "base": -0.05}

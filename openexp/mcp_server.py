@@ -461,6 +461,11 @@ def handle_request(request: dict) -> dict:
                 "outcome_resolvers": active_experience.outcome_resolvers,
                 "retrieval_boosts": active_experience.retrieval_boosts,
                 "q_config_overrides": active_experience.q_config_overrides,
+                "process_stages": [
+                    {"name": s.name, "description": s.description, "reward_on_enter": s.reward_on_enter}
+                    for s in active_experience.process_stages
+                ],
+                "reward_memory_types": active_experience.reward_memory_types,
                 "stats": q_cache.get_experience_stats(exp_name),
             }
             return {"content": [{"type": "text", "text": json.dumps(info, indent=2, default=str)}]}

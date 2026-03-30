@@ -142,3 +142,77 @@ class TestRewardRetrievedMemories:
             updated = reward_retrieved_memories("sess-nope", reward=0.3)
 
         assert updated == 0
+
+
+class TestMemoryTypeFiltering:
+    def test_reward_memory_types_filters(self, tmp_path):
+        """reward_memory_types filters which memories get rewarded."""
+        ret_path = tmp_path / "ret.jsonl"
+        q_cache_path = tmp_path / "q_cache.json"
+
+        # Write retrieval log with 3 memories
+        record = {
+            "session_id": "sess-filter",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "query": "test",
+            "memory_ids": ["mem-decision", "mem-action", "mem-fact"],
+            "scores": [0.9, 0.8, 0.7],
+        }
+        ret_path.write_text(json.dumps(record) + "\n")
+
+        # Mock Qdrant client to return memory types
+        mock_point_decision = MagicMock()
+        mock_point_decision.id = "mem-decision"
+        mock_point_decision.payload = {"memory_type": "decision"}
+
+        mock_point_action = MagicMock()
+        mock_point_action.id = "mem-action"
+        mock_point_action.payload = {"memory_type": "action"}
+
+        mock_point_fact = MagicMock()
+        mock_point_fact.id = "mem-fact"
+        mock_point_fact.payload = {"memory_type": "fact"}
+
+        mock_client = MagicMock()
+        mock_client.retrieve.return_value = [mock_point_decision, mock_point_action, mock_point_fact]
+
+        with patch("openexp.ingest.retrieval_log.RETRIEVALS_PATH", ret_path), \
+             patch("openexp.ingest.reward.Q_CACHE_PATH", q_cache_path), \
+             patch("openexp.core.direct_search._get_qdrant", return_value=mock_client):
+            # Only reward decisions — should filter out action and fact
+            updated = reward_retrieved_memories(
+                "sess-filter", reward=0.3,
+                reward_memory_types=["decision"],
+            )
+
+        # Only 1 memory should be rewarded (the decision)
+        assert updated == 1
+
+    def test_empty_reward_memory_types_rewards_all(self, tmp_path):
+        """Empty reward_memory_types list rewards all memories (default behavior)."""
+        ret_path = tmp_path / "ret.jsonl"
+        q_cache_path = tmp_path / "q_cache.json"
+
+        record = {
+            "session_id": "sess-all",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "query": "test",
+            "memory_ids": ["mem-a", "mem-b"],
+            "scores": [0.9, 0.8],
+        }
+        ret_path.write_text(json.dumps(record) + "\n")
+
+        q_cache_path.write_text(json.dumps({
+            "mem-a": {"q_value": 0.0, "q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0, "q_visits": 0},
+            "mem-b": {"q_value": 0.0, "q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0, "q_visits": 0},
+        }))
+
+        with patch("openexp.ingest.retrieval_log.RETRIEVALS_PATH", ret_path), \
+             patch("openexp.ingest.reward.Q_CACHE_PATH", q_cache_path):
+            # Empty list = reward all (no filtering)
+            updated = reward_retrieved_memories(
+                "sess-all", reward=0.3,
+                reward_memory_types=[],
+            )
+
+        assert updated == 2

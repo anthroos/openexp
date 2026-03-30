@@ -4,6 +4,13 @@ An **Experience** is a domain-specific reward profile that tells OpenExp what "p
 
 The default experience rewards coding outputs (commits, PRs, tests). But if your work is sales, devops, content creation, or research — the signals are different. Experiences let you define that.
 
+An experience consists of:
+- **Signal weights** — how much each action type is worth
+- **Process stages** — your pipeline (backlog → done, lead → won)
+- **Memory type filter** — which memory types receive rewards (decisions only? everything?)
+- **Retrieval boosts** — which types rank higher in search
+- **Learning speed** — how fast Q-values update
+
 ## How It Works
 
 After each Claude Code session, OpenExp computes a reward score: did this session accomplish something useful?
@@ -17,7 +24,9 @@ Apply weights from active Experience
     ↓
 reward = sum(signal × weight) + base + penalties
     ↓
-Update Q-values for all memories from this session
+Filter: only reward memory types that matter (e.g., decisions, not raw actions)
+    ↓
+Update Q-values for matching memories from this session
     ↓
 Next session → memories from productive sessions rank higher
 ```
@@ -108,6 +117,59 @@ openexp experience list
 openexp experience info          # shows active + weights
 ```
 
+## Process Stages
+
+Each experience can define **pipeline stages** — the steps in your business process. Stages are declarative: they define what the pipeline looks like and what reward a memory earns when the process advances to that stage.
+
+```yaml
+process_stages:
+  - name: lead
+    description: New lead identified
+    reward_on_enter: 0.0
+  - name: qualified
+    description: Lead confirmed as viable
+    reward_on_enter: 0.2
+  - name: proposal
+    description: Proposal sent
+    reward_on_enter: 0.3
+  - name: won
+    description: Deal closed
+    reward_on_enter: 0.8
+```
+
+Stages are currently informational and used by outcome resolvers (e.g., `CRMCSVResolver`) to determine reward magnitude when a deal moves from one stage to another. The `reward_on_enter` value is the reward applied when the process advances to that stage.
+
+Stages can also be defined as simple strings:
+
+```yaml
+process_stages:
+  - backlog
+  - in_progress
+  - review
+  - done
+```
+
+String format uses `reward_on_enter: 0.0` by default.
+
+## Memory Type Filter (`reward_memory_types`)
+
+By default, all recalled memories receive session rewards. But in many workflows, raw action observations (e.g., "ran git status") are noise — you only want to reward the insights and decisions that drove the outcome.
+
+```yaml
+# Only reward these memory types during session reward
+reward_memory_types:
+  - decision
+  - insight
+  - outcome
+```
+
+When set, OpenExp fetches the memory type from Qdrant and filters out non-matching memories before applying rewards. This means:
+- **Decisions** about client strategy get rewarded when a deal closes
+- **Raw tool observations** like "Read file.py" don't accumulate noise Q-values
+- The system learns faster because signal-to-noise ratio is higher
+
+An empty list (or omitting the field) preserves the default behavior: reward all recalled memories.
+
 ## Creating Your Own Experience
 
 ### Step 1: Answer These Questions
@@ -183,6 +245,24 @@ retrieval_boosts:
   outcome: 1.2
 q_config_overrides:
   alpha: 0.25                   # learning rate
+
+# Pipeline stages (optional — used by outcome resolvers)
+process_stages:
+  - name: lead
+    description: New opportunity
+    reward_on_enter: 0.0
+  - name: proposal
+    description: Proposal sent
+    reward_on_enter: 0.3
+  - name: won
+    description: Deal closed
+    reward_on_enter: 0.8
+
+# Which memory types receive session rewards (optional — empty = all)
+reward_memory_types:
+  - decision
+  - insight
+  - outcome
 ```
 
 ### Step 3: Activate
