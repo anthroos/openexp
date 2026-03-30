@@ -73,6 +73,7 @@ def _obs_to_payload(obs: Dict) -> Dict:
     obs_type = obs.get("type", "feature")
     tool = obs.get("tool", "")
     summary = obs.get("summary", "")
+    client_id = obs.get("client_id") or _detect_client_id(obs)
 
     return {
         "memory": summary,
@@ -96,12 +97,67 @@ def _obs_to_payload(obs: Dict) -> Dict:
             "tool": tool,
             "tags": obs.get("tags", []),
             "file_path": obs.get("context", {}).get("file_path", ""),
-            **({"client_id": obs["client_id"]} if obs.get("client_id") else {}),
+            **({"client_id": client_id} if client_id else {}),
         },
     }
 
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
+
+# --- Client auto-tagging from CRM ---
+_CLIENT_LOOKUP: Optional[Dict] = None
+
+
+def _load_client_lookup() -> Dict[str, str]:
+    """Load company name → company_id lookup from CRM CSV.
+
+    Returns {lowercase_name: company_id} for auto-tagging observations.
+    Cached on first call. Returns empty dict if CRM not configured.
+    """
+    global _CLIENT_LOOKUP
+    if _CLIENT_LOOKUP is not None:
+        return _CLIENT_LOOKUP
+
+    from ..core.config import CRM_DIR
+    _CLIENT_LOOKUP = {}
+    if not CRM_DIR or not CRM_DIR.exists():
+        return _CLIENT_LOOKUP
+
+    companies_path = CRM_DIR / "contacts" / "companies.csv"
+    if not companies_path.exists():
+        return _CLIENT_LOOKUP
+
+    import csv
+    try:
+        with open(companies_path, encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                cid = row.get("company_id", "").strip()
+                name = row.get("name", "").strip()
+                if cid and name and len(name) >= 3:
+                    _CLIENT_LOOKUP[name.lower()] = cid
+    except Exception as e:
+        logger.warning("Failed to load CRM companies for auto-tagging: %s", e)
+
+    logger.info("Loaded %d companies for client auto-tagging", len(_CLIENT_LOOKUP))
+    return _CLIENT_LOOKUP
+
+
+def _detect_client_id(obs: Dict) -> Optional[str]:
+    """Detect client_id from observation content by matching CRM company names."""
+    lookup = _load_client_lookup()
+    if not lookup:
+        return None
+
+    # Build searchable text from observation
+    text = (obs.get("summary", "") + " " + obs.get("context", {}).get("file_path", "")).lower()
+    if len(text) < 5:
+        return None
+
+    for name, cid in lookup.items():
+        if name in text:
+            return cid
+
+    return None
 
 
 def _load_observations(obs_dir: Path, processed_ids: set = None) -> List[Dict]:
