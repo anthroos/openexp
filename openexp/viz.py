@@ -1654,8 +1654,7 @@ def _sanitize(data):
         r"/Users/\w+",
         r"/home/\w+",
         r"sk-ant-",
-        r"welababeldata",
-        r"ivanpasichnyk",
+        r"sk-[a-zA-Z0-9]{20,}",
     ]
 
     def _check(obj, path=""):
