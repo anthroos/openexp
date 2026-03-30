@@ -7,6 +7,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/anthroos/openexp/actions/workflows/tests.yml"><img src="https://github.com/anthroos/openexp/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
   <a href="https://arxiv.org/abs/2603.07360"><img src="https://img.shields.io/badge/arXiv-2603.07360-b31b1b.svg" alt="arXiv"></a>
@@ -127,7 +128,7 @@ Three hooks integrate with Claude Code automatically:
 | **PostToolUse** | After Write/Edit/Bash | Captures what Claude does as observations (JSONL) |
 | **SessionEnd** | Session closes | Generates summary, triggers ingest + reward (async) |
 
-The MCP server provides 8 tools for explicit memory operations (search, add, predict, reflect).
+The MCP server provides 16 tools for memory operations, introspection, and calibration.
 
 ### The Learning Loop
 
@@ -185,6 +186,8 @@ With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to 
 
 ## MCP Tools
 
+**Core — memory operations:**
+
 | Tool | Description |
 |------|-------------|
 | `search_memory` | Hybrid search: BM25 + vector + Q-value reranking |
@@ -196,6 +199,18 @@ With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to 
 | `reflect` | Review recent memories for patterns |
 | `memory_stats` | Q-cache size, prediction accuracy stats |
 | `reload_q_cache` | Hot-reload Q-values from disk |
+
+**Introspection — understand why memories rank the way they do:**
+
+| Tool | Description |
+|------|-------------|
+| `experience_info` | Active experience config (weights, resolvers, boosts) |
+| `experience_top_memories` | Top or bottom N memories by Q-value |
+| `experience_insights` | Reward distribution, learning velocity, valuable memory types |
+| `calibrate_experience_q` | Manually set Q-value for a memory with reason |
+| `memory_reward_history` | Full reward trail: Q-value changes, contexts (L2), cold storage (L3) |
+| `reward_detail` | Complete L3 cold storage record for a reward event |
+| `explain_q` | Human-readable LLM explanation of why a memory has its Q-value (L4) |
 
 ## CLI
 
@@ -214,6 +229,18 @@ openexp resolve
 
 # Show Q-cache statistics
 openexp stats
+
+# Memory compaction (merge similar memories)
+openexp compact --dry-run
+
+# Manage experiences
+openexp experience list
+openexp experience show sales
+openexp experience create        # interactive wizard
+
+# Visualization
+openexp viz --replay latest      # session replay
+openexp viz --demo               # demo dashboard
 ```
 
 ## Configuration
@@ -249,7 +276,11 @@ openexp/
 │   ├── hybrid_search.py        # BM25 keyword + vector + Q-value hybrid scoring
 │   ├── scoring.py              # Composite relevance: similarity × recency × importance
 │   ├── lifecycle.py            # 8-state memory lifecycle (active→confirmed→archived→...)
+│   ├── experience.py           # Per-domain Q-value contexts (default, sales, dealflow)
 │   ├── enrichment.py           # Auto-metadata extraction (LLM or defaults)
+│   ├── explanation.py          # L4: LLM-generated reward explanations
+│   ├── reward_log.py           # L3: cold storage of reward events
+│   ├── compaction.py           # Memory merging/clustering
 │   ├── v7_extensions.py        # Lifecycle filter + hybrid scoring integration
 │   └── config.py               # Environment-based configuration
 │
@@ -264,6 +295,11 @@ openexp/
 ├── resolvers/                  # Outcome resolvers (pluggable)
 │   └── crm_csv.py              # CRM CSV stage transition → reward events
 │
+├── data/experiences/           # Shipped experience configs
+│   ├── default.yaml            # Software engineering
+│   ├── sales.yaml              # Sales & outreach
+│   └── dealflow.yaml           # Deal pipeline
+│
 ├── outcome.py                  # Outcome resolution framework
 │
 ├── hooks/                      # Claude Code integration
@@ -272,9 +308,10 @@ openexp/
 │   ├── post-tool-use.sh        # Capture observations from tool calls
 │   └── session-end.sh          # Summary + ingest + reward (closes the loop)
 │
-├── mcp_server.py               # MCP STDIO server (JSON-RPC 2.0)
+├── mcp_server.py               # MCP STDIO server (16 tools, JSON-RPC 2.0)
 ├── reward_tracker.py           # Prediction → outcome → Q-value updates
-└── cli.py                      # CLI: search, ingest, stats
+├── viz.py                      # Visualization + session replay
+└── cli.py                      # CLI: search, ingest, stats, viz, compact, experience
 ```
 
 ### Memory Lifecycle
@@ -370,6 +407,7 @@ export OPENEXP_EXPERIENCE=dealflow
 Detailed docs are available in the [`docs/`](docs/) directory:
 
 - [How It Works](docs/how-it-works.md) — full explanation of the learning loop
+- [Storage System](docs/storage-system.md) — 5-level pyramid (L0–L4), all 4 reward paths
 - [Experiences](docs/experiences.md) — domain-specific reward profiles (create your own)
 - [Architecture](docs/architecture.md) — system design and data flow
 - [Configuration](docs/configuration.md) — all environment variables and options
@@ -380,11 +418,11 @@ This project is in early stages. See [CONTRIBUTING.md](CONTRIBUTING.md) for setu
 
 Key areas where help is welcome:
 
-- **Reward signals** — beyond commits/PRs, what indicates a productive session?
-- **Compaction** — merging duplicate or outdated memories automatically
+- **New experiences** — domain-specific reward profiles (DevOps, writing, research, etc.)
+- **Outcome resolvers** — new integrations beyond CRM (Jira, Linear, GitHub Issues)
 - **Multi-project learning** — sharing relevant context across projects
 - **Benchmarks** — measuring retrieval quality improvement over time
-- **More lifecycle transitions** — automated contradiction detection
+- **Automated lifecycle transitions** — contradiction detection, staleness heuristics
 
 ## Research
 
