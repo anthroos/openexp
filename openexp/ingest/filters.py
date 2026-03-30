@@ -5,6 +5,17 @@ Expected result: ~60-70% of observations get filtered out.
 import re
 from typing import Dict
 
+# Patterns that indicate secrets — never ingest these observations
+_SECRET_PATTERNS = [
+    r"sk-ant-api\w+",           # Anthropic API keys
+    r"sk-[a-zA-Z0-9]{20,}",    # OpenAI-style keys
+    r"ghp_[a-zA-Z0-9]{36}",    # GitHub personal access tokens
+    r"gho_[a-zA-Z0-9]{36}",    # GitHub OAuth tokens
+    r"AKIA[0-9A-Z]{16}",       # AWS access key IDs
+    r"-----BEGIN.*PRIVATE KEY", # Private keys
+]
+_SECRET_RE = re.compile("|".join(_SECRET_PATTERNS))
+
 _READONLY_PATTERNS = [
     r"^(git\s+(status|log|diff|show|branch|remote|stash\s+list))",
     r"^(find|grep|rg|ls|cat|head|tail|wc|du|tree|stat)\b",
@@ -34,6 +45,11 @@ def should_keep(obs: Dict) -> bool:
     tool = obs.get("tool", "")
     tags = set(obs.get("tags", []))
     obs_type = obs.get("type", "")
+
+    # Never ingest observations containing secrets
+    full_text = summary + " " + str(obs.get("context", ""))
+    if _SECRET_RE.search(full_text):
+        return False
 
     if tags & _VALUABLE_TAGS:
         return True
