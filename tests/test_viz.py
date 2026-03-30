@@ -77,9 +77,9 @@ class TestSanitize:
         with pytest.raises(ValueError, match="Sensitive data"):
             _sanitize({"key": "sk-ant-abc123"})
 
-    def test_username_caught(self):
+    def test_long_api_key_caught(self):
         with pytest.raises(ValueError, match="Sensitive data"):
-            _sanitize({"key": "ivanpasichnyk"})
+            _sanitize({"key": "sk-abcdefghijklmnopqrstuvwxyz"})
 
     def test_numeric_values_ok(self):
         data = {"q": 0.5, "count": 100, "nested": [1, 2, 3]}
