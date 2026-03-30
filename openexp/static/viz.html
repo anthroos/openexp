@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenExp — Memory Intelligence Dashboard</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+:root {
+  --bg: #0f1117; --card: #161b22; --border: #30363d;
+  --text: #e1e4e8; --muted: #8b949e;
+  --blue: #58a6ff; --green: #3fb950; --amber: #d29922;
+  --red: #f85149; --purple: #bc8cff; --cyan: #39d2c0;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.5; padding: 24px; max-width: 1200px; margin: 0 auto;
+}
+h1 { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
+h2 { font-size: 20px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+h3 { font-size: 14px; font-weight: 500; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.subtitle { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+
+/* Header cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 40px; }
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 20px; text-align: center;
+}
+.card .value { font-size: 36px; font-weight: 700; color: var(--blue); }
+.card .label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+/* Sections */
+.section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin-bottom: 24px; }
+.section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+.section-badge { background: var(--blue); color: #000; font-weight: 700; font-size: 12px; padding: 2px 8px; border-radius: 4px; }
+
+/* Charts */
+.chart-container { width: 100%; overflow-x: auto; }
+svg text { font-family: inherit; }
+.axis text { fill: var(--muted); font-size: 11px; }
+.axis line, .axis path { stroke: var(--border); }
+.grid line { stroke: var(--border); stroke-opacity: 0.3; }
+
+/* Toggle buttons */
+.toggles { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.toggle-btn {
+  padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border);
+  background: transparent; color: var(--muted); cursor: pointer; font-size: 12px;
+  transition: all 0.2s;
+}
+.toggle-btn.active { border-color: currentColor; color: var(--text); }
+.toggle-btn[data-layer="combined"] { --accent: var(--text); }
+.toggle-btn[data-layer="action"] { --accent: var(--blue); }
+.toggle-btn[data-layer="hypothesis"] { --accent: var(--amber); }
+.toggle-btn[data-layer="fit"] { --accent: var(--green); }
+.toggle-btn.active { color: var(--accent); border-color: var(--accent); }
+
+/* Stats panel */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-top: 16px; }
+.stat { background: var(--bg); padding: 8px 12px; border-radius: 4px; text-align: center; }
+.stat .val { font-size: 18px; font-weight: 600; color: var(--blue); }
+.stat .lbl { font-size: 11px; color: var(--muted); }
+
+/* Learning loop */
+.loop-container { display: flex; justify-content: center; padding: 20px 0; }
+.loop-svg text { fill: var(--text); font-size: 13px; }
+.loop-svg .node { fill: var(--card); stroke: var(--border); stroke-width: 1.5; rx: 8; }
+.loop-svg .node-active { stroke: var(--blue); }
+.loop-svg .arrow { fill: none; stroke: var(--border); stroke-width: 1.5; marker-end: url(#arrowhead); }
+.loop-svg .dot {
+  fill: var(--blue); filter: drop-shadow(0 0 4px var(--blue));
+}
+
+/* Formula display */
+.formulas { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
+.formula-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
+.formula-card h4 { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.formula-card code { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; color: var(--green); display: block; white-space: pre-wrap; }
+
+/* Donut */
+.donut-container { display: flex; align-items: center; gap: 32px; flex-wrap: wrap; justify-content: center; }
+.legend { display: flex; flex-direction: column; gap: 6px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+/* Radar */
+.radar-container { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+/* Scoring config */
+.config-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 16px; }
+.config-item { background: var(--bg); padding: 12px 16px; border-radius: 6px; }
+.config-item .key { color: var(--muted); font-size: 12px; }
+.config-item .val { color: var(--text); font-size: 14px; font-weight: 500; }
+
+/* Footer */
+.footer { text-align: center; padding: 32px 0 16px; color: var(--muted); font-size: 13px; }
+.footer a { color: var(--blue); text-decoration: none; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  body { padding: 12px; }
+  .cards { grid-template-columns: repeat(2, 1fr); }
+  .card .value { font-size: 24px; }
+  h1 { font-size: 22px; }
+  .formulas { grid-template-columns: 1fr; }
+  .donut-container, .radar-container { flex-direction: column; align-items: center; }
+}
+</style>
+</head>
+<body>
+
+<h1>OpenExp</h1>
+<p class="subtitle">Q-Learning Memory Intelligence — generated <span id="gen-time"></span></p>
+
+<!-- Header cards -->
+<div class="cards" id="header-cards"></div>
+
+<!-- Section A: Learning Loop -->
+<div class="section" id="section-loop">
+  <div class="section-header"><span class="section-badge">A</span><h2>Learning Loop</h2></div>
+  <div class="loop-container" id="loop-diagram"></div>
+  <div class="formulas" id="formulas"></div>
+</div>
+
+<!-- Section B: Q-Value Distribution -->
+<div class="section" id="section-qdist">
+  <div class="section-header"><span class="section-badge">B</span><h2>Q-Value Distribution</h2></div>
+  <div class="toggles" id="dist-toggles"></div>
+  <div class="chart-container" id="dist-chart"></div>
+  <div class="stats-grid" id="dist-stats"></div>
+</div>
+
+<!-- Section C: Q-Value Evolution -->
+<div class="section" id="section-qevo">
+  <div class="section-header"><span class="section-badge">C</span><h2>Q-Value Evolution Over Time</h2></div>
+  <div class="toggles" id="evo-toggles"></div>
+  <div class="chart-container" id="evo-chart"></div>
+</div>
+
+<!-- Section D: Scoring Breakdown -->
+<div class="section" id="section-scoring">
+  <div class="section-header"><span class="section-badge">D</span><h2>Scoring Breakdown</h2></div>
+  <div class="radar-container" id="scoring-charts"></div>
+  <div class="config-grid" id="scoring-config"></div>
+</div>
+
+<!-- Section E: Memory Lifecycle -->
+<div class="section" id="section-lifecycle">
+  <div class="section-header"><span class="section-badge">E</span><h2>Memory Lifecycle</h2></div>
+  <div class="donut-container" id="lifecycle-chart"></div>
+</div>
+
+<!-- Section F: Session Activity -->
+<div class="section" id="section-sessions">
+  <div class="section-header"><span class="section-badge">F</span><h2>Session Activity Timeline</h2></div>
+  <div class="chart-container" id="session-chart"></div>
+</div>
+
+<div class="footer">
+  Generated by <a href="https://github.com/anthroos/openexp" target="_blank">OpenExp</a> —
+  Q-Learning Memory for AI Agents
+</div>
+
+<!-- DATA_PLACEHOLDER -->
+
+<script>
+// === Utility ===
+const D = VIZ_DATA;
+const fmt = d3.format(",");
+const fmtP = d3.format(".1%");
+const fmtD = d3.format(".3f");
+const colors = { combined: '#e1e4e8', action: '#58a6ff', hypothesis: '#d29922', fit: '#3fb950' };
+
+function chartDims(container, aspectRatio = 0.4) {
+  const w = Math.min(container.clientWidth - 48, 1100);
+  const h = Math.max(w * aspectRatio, 200);
+  return { width: w, height: h, margin: { top: 20, right: 20, bottom: 40, left: 50 } };
+}
+
+// === Header ===
+document.getElementById('gen-time').textContent = new Date(D.meta.generated_at).toLocaleDateString();
+
+const cards = [
+  { value: fmt(D.meta.total_memories), label: 'Total Memories', color: '#58a6ff' },
+  { value: fmtD(D.q_distribution.combined.stats.mean || 0), label: 'Mean Q-Value', color: '#3fb950' },
+  { value: fmt(D.meta.total_sessions), label: 'Total Sessions', color: '#d29922' },
+  { value: fmt(D.meta.total_observations), label: 'Total Observations', color: '#bc8cff' },
+];
+const cardContainer = document.getElementById('header-cards');
+cards.forEach(c => {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.innerHTML = `<div class="value" style="color:${c.color}">${c.value}</div><div class="label">${c.label}</div>`;
+  cardContainer.appendChild(div);
+});
+
+// === Section A: Learning Loop ===
+(function drawLoop() {
+  const w = 800, h = 320;
+  const svg = d3.select('#loop-diagram').append('svg')
+    .attr('viewBox', `0 0 ${w} ${h}`)
+    .attr('class', 'loop-svg')
+    .style('max-width', '800px').style('width', '100%');
+
+  svg.append('defs').append('marker')
+    .attr('id', 'arrowhead').attr('viewBox', '0 0 10 7')
+    .attr('refX', 10).attr('refY', 3.5)
+    .attr('markerWidth', 8).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('polygon').attr('points', '0 0, 10 3.5, 0 7').attr('fill', '#30363d');
+
+  const nodes = [
+    { x: 80,  y: 100, label: 'Session\nStart', w: 90, h: 50 },
+    { x: 220, y: 100, label: 'Recall\nMemories', w: 90, h: 50 },
+    { x: 400, y: 100, label: 'Claude\nWorks', w: 90, h: 50 },
+    { x: 580, y: 100, label: 'Observe\nActions', w: 90, h: 50 },
+    { x: 700, y: 100, label: 'Session\nEnd', w: 90, h: 50 },
+    { x: 700, y: 230, label: 'Compute\nReward', w: 90, h: 50 },
+    { x: 400, y: 230, label: 'Q-Value\nUpdate', w: 90, h: 50 },
+    { x: 80,  y: 230, label: 'Better\nRetrieval', w: 90, h: 50 },
+  ];
+
+  const edges = [
+    [0,1],[1,2],[2,3],[3,4],
+    [4,5],[5,6],[6,7],[7,0],
+  ];
+
+  // Draw edges
+  edges.forEach(([a,b]) => {
+    const na = nodes[a], nb = nodes[b];
+    let x1 = na.x + na.w/2, y1 = na.y, x2 = nb.x - nb.w/2, y2 = nb.y;
+    // Adjust for vertical edges
+    if (a === 4 && b === 5) { x1 = na.x; y1 = na.y + na.h/2; x2 = nb.x; y2 = nb.y - nb.h/2; }
+    if (a === 7 && b === 0) { x1 = na.x; y1 = na.y - na.h/2; x2 = nb.x; y2 = nb.y + nb.h/2; }
+    if (a === 5 && b === 6) { x1 = na.x - na.w/2; y1 = na.y; x2 = nb.x + nb.w/2; y2 = nb.y; }
+    if (a === 6 && b === 7) { x1 = na.x - na.w/2; y1 = na.y; x2 = nb.x + nb.w/2; y2 = nb.y; }
+    svg.append('line').attr('class','arrow').attr('x1',x1).attr('y1',y1).attr('x2',x2).attr('y2',y2);
+  });
+
+  // Draw nodes
+  nodes.forEach(n => {
+    const g = svg.append('g');
+    g.append('rect').attr('class','node').attr('x', n.x - n.w/2).attr('y', n.y - n.h/2).attr('width', n.w).attr('height', n.h);
+    const lines = n.label.split('\n');
+    lines.forEach((line, i) => {
+      g.append('text').attr('x', n.x).attr('y', n.y + (i - (lines.length-1)/2) * 16).attr('text-anchor','middle').attr('dominant-baseline','middle').text(line);
+    });
+  });
+
+  // Animated dot
+  const pathPoints = nodes.map(n => [n.x, n.y]);
+  pathPoints.push(pathPoints[0]); // close loop
+  const lineGen = d3.line().curve(d3.curveLinearClosed);
+
+  const dot = svg.append('circle').attr('class','dot').attr('r', 5).attr('cx', nodes[0].x).attr('cy', nodes[0].y);
+  function animateDot() {
+    let i = 0;
+    function step() {
+      const next = (i + 1) % nodes.length;
+      dot.transition().duration(800).ease(d3.easeQuadInOut)
+        .attr('cx', nodes[next].x).attr('cy', nodes[next].y)
+        .on('end', () => { i = next; step(); });
+    }
+    step();
+  }
+  animateDot();
+})();
+
+// Formulas
+const formulaContainer = document.getElementById('formulas');
+const formulas = [
+  { title: 'Q-Update Rule', code: `Q_new = clamp(Q + α × reward, ${D.scoring_config.q_learning.q_floor}, ${D.scoring_config.q_learning.q_ceiling})\nα = ${D.scoring_config.q_learning.alpha}` },
+  { title: 'Hybrid Score', code: `score = Σ(w_i × signal_i) × status_weight\n  semantic: ${D.scoring_config.weights.w_semantic}\n  keyword:  ${D.scoring_config.weights.w_keyword}\n  recency:  ${D.scoring_config.weights.w_recency}\n  importance: ${D.scoring_config.weights.w_importance}\n  q_value:  ${D.scoring_config.weights.w_q_value}` },
+  { title: 'Q-Layer Weights', code: `combined = action × ${D.scoring_config.q_layer_weights.action}\n         + hypothesis × ${D.scoring_config.q_layer_weights.hypothesis}\n         + fit × ${D.scoring_config.q_layer_weights.fit}` },
+];
+formulas.forEach(f => {
+  const div = document.createElement('div');
+  div.className = 'formula-card';
+  div.innerHTML = `<h4>${f.title}</h4><code>${f.code}</code>`;
+  formulaContainer.appendChild(div);
+});
+
+// === Section B: Q-Value Distribution ===
+(function drawDistribution() {
+  const container = document.getElementById('dist-chart');
+  const { width, height, margin } = chartDims(container);
+  const iw = width - margin.left - margin.right;
+  const ih = height - margin.top - margin.bottom;
+
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .style('width','100%');
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const layers = ['combined','action','hypothesis','fit'];
+  const visible = { combined: true, action: true, hypothesis: true, fit: true };
+
+  const allBins = D.q_distribution.combined.histogram;
+  const x = d3.scaleLinear().domain([-0.5, 1.0]).range([0, iw]);
+  const maxCount = d3.max(layers.flatMap(l => D.q_distribution[l].histogram.map(b => b.count)));
+  const y = d3.scaleLinear().domain([0, maxCount * 1.1]).range([ih, 0]);
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${ih})`).call(d3.axisBottom(x).ticks(10));
+  g.append('g').attr('class','axis').call(d3.axisLeft(y).ticks(5));
+  g.append('text').attr('x', iw/2).attr('y', ih + 35).attr('text-anchor','middle').attr('fill','#8b949e').attr('font-size','12px').text('Q-Value');
+
+  const barWidth = iw / allBins.length;
+
+  const groups = {};
+  layers.forEach(layer => {
+    const bins = D.q_distribution[layer].histogram;
+    groups[layer] = g.selectAll(`.bar-${layer}`)
+      .data(bins).enter().append('rect')
+      .attr('x', (d,i) => x(d.bin_start) + 1)
+      .attr('y', d => y(d.count))
+      .attr('width', barWidth - 2)
+      .attr('height', d => ih - y(d.count))
+      .attr('fill', colors[layer])
+      .attr('opacity', layer === 'combined' ? 0.6 : 0.3)
+      .attr('rx', 1);
+  });
+
+  // Toggles
+  const toggleContainer = document.getElementById('dist-toggles');
+  layers.forEach(layer => {
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn active';
+    btn.dataset.layer = layer;
+    btn.textContent = layer.charAt(0).toUpperCase() + layer.slice(1);
+    btn.onclick = () => {
+      visible[layer] = !visible[layer];
+      btn.classList.toggle('active');
+      groups[layer].transition().duration(300).attr('opacity', visible[layer] ? (layer === 'combined' ? 0.6 : 0.3) : 0);
+    };
+    toggleContainer.appendChild(btn);
+  });
+
+  // Stats
+  const stats = D.q_distribution.combined.stats;
+  const statsContainer = document.getElementById('dist-stats');
+  [
+    { val: fmtD(stats.min), lbl: 'Min' },
+    { val: fmtD(stats.max), lbl: 'Max' },
+    { val: fmtD(stats.mean), lbl: 'Mean' },
+    { val: fmtD(stats.median), lbl: 'Median' },
+    { val: fmtD(stats.std), lbl: 'Std Dev' },
+    { val: fmt(stats.count), lbl: 'Count' },
+  ].forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'stat';
+    div.innerHTML = `<div class="val">${s.val}</div><div class="lbl">${s.lbl}</div>`;
+    statsContainer.appendChild(div);
+  });
+})();
+
+// === Section C: Q-Value Evolution ===
+(function drawEvolution() {
+  const evo = D.q_evolution;
+  if (!evo || evo.length === 0) { document.getElementById('evo-chart').innerHTML = '<p style="color:var(--muted)">No evolution data available.</p>'; return; }
+
+  const container = document.getElementById('evo-chart');
+  const { width, height, margin } = chartDims(container);
+  const iw = width - margin.left - margin.right;
+  const ih = height - margin.top - margin.bottom;
+
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .style('width','100%');
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const parseDate = d3.timeParse('%Y-%m-%d');
+  const data = evo.map(d => ({ ...d, date: parseDate(d.date) })).filter(d => d.date);
+
+  const x = d3.scaleTime().domain(d3.extent(data, d => d.date)).range([0, iw]);
+  const allVals = data.flatMap(d => [d.mean_combined, d.mean_action, d.mean_hypothesis, d.mean_fit]);
+  const y = d3.scaleLinear().domain([d3.min(allVals) * 0.95, d3.max(allVals) * 1.05]).range([ih, 0]);
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${ih})`).call(d3.axisBottom(x).ticks(6).tickFormat(d3.timeFormat('%b %d')));
+  g.append('g').attr('class','axis').call(d3.axisLeft(y).ticks(5));
+
+  const layers = [
+    { key: 'mean_combined', color: colors.combined, label: 'Combined' },
+    { key: 'mean_action', color: colors.action, label: 'Action' },
+    { key: 'mean_hypothesis', color: colors.hypothesis, label: 'Hypothesis' },
+    { key: 'mean_fit', color: colors.fit, label: 'Fit' },
+  ];
+
+  const visible = {};
+  const lineGroups = {};
+
+  layers.forEach(l => {
+    visible[l.key] = true;
+    const line = d3.line().x(d => x(d.date)).y(d => y(d[l.key])).curve(d3.curveMonotoneX);
+    lineGroups[l.key] = g.append('path')
+      .datum(data).attr('d', line)
+      .attr('fill','none').attr('stroke', l.color).attr('stroke-width', 2).attr('opacity', 0.8);
+    // Dots
+    g.selectAll(`.dot-${l.key}`).data(data).enter().append('circle')
+      .attr('cx', d => x(d.date)).attr('cy', d => y(d[l.key]))
+      .attr('r', 3).attr('fill', l.color).attr('opacity', 0.6)
+      .attr('class', `dot-${l.key}`);
+  });
+
+  // Toggles
+  const toggleContainer = document.getElementById('evo-toggles');
+  layers.forEach(l => {
+    const layerName = l.key.replace('mean_', '');
+    const btn = document.createElement('button');
+    btn.className = 'toggle-btn active';
+    btn.dataset.layer = layerName;
+    btn.textContent = l.label;
+    btn.onclick = () => {
+      visible[l.key] = !visible[l.key];
+      btn.classList.toggle('active');
+      const op = visible[l.key] ? 0.8 : 0;
+      lineGroups[l.key].transition().duration(300).attr('opacity', op);
+      g.selectAll(`.dot-${l.key}`).transition().duration(300).attr('opacity', visible[l.key] ? 0.6 : 0);
+    };
+    toggleContainer.appendChild(btn);
+  });
+})();
+
+// === Section D: Scoring Breakdown ===
+(function drawScoring() {
+  const container = document.getElementById('scoring-charts');
+  const weights = D.scoring_config.weights;
+  const qWeights = D.scoring_config.q_layer_weights;
+
+  // Radar chart helper
+  function drawRadar(parentId, data, size) {
+    const div = document.createElement('div');
+    div.style.textAlign = 'center';
+    container.appendChild(div);
+
+    const svg = d3.select(div).append('svg')
+      .attr('viewBox', `0 0 ${size} ${size + 30}`)
+      .style('max-width', size + 'px').style('width', '100%');
+
+    const cx = size/2, cy = size/2;
+    const r = size/2 - 40;
+    const n = data.length;
+
+    // Grid circles
+    [0.25, 0.5, 0.75, 1.0].forEach(level => {
+      svg.append('circle').attr('cx',cx).attr('cy',cy).attr('r', r * level)
+        .attr('fill','none').attr('stroke','#30363d').attr('stroke-width', 0.5);
+    });
+
+    // Axes + labels
+    data.forEach((d, i) => {
+      const angle = (Math.PI * 2 * i / n) - Math.PI/2;
+      const x2 = cx + r * Math.cos(angle);
+      const y2 = cy + r * Math.sin(angle);
+      svg.append('line').attr('x1',cx).attr('y1',cy).attr('x2',x2).attr('y2',y2)
+        .attr('stroke','#30363d').attr('stroke-width', 0.5);
+      const lx = cx + (r + 20) * Math.cos(angle);
+      const ly = cy + (r + 20) * Math.sin(angle);
+      svg.append('text').attr('x',lx).attr('y',ly)
+        .attr('text-anchor','middle').attr('dominant-baseline','middle')
+        .attr('fill','#8b949e').attr('font-size','11px')
+        .text(d.label);
+    });
+
+    // Data polygon
+    const points = data.map((d, i) => {
+      const angle = (Math.PI * 2 * i / n) - Math.PI/2;
+      return [cx + r * d.value * Math.cos(angle), cy + r * d.value * Math.sin(angle)];
+    });
+    svg.append('polygon')
+      .attr('points', points.map(p => p.join(',')).join(' '))
+      .attr('fill', 'rgba(88,166,255,0.15)').attr('stroke','#58a6ff').attr('stroke-width', 1.5);
+    points.forEach(p => {
+      svg.append('circle').attr('cx',p[0]).attr('cy',p[1]).attr('r',4)
+        .attr('fill','#58a6ff');
+    });
+  }
+
+  // Main scoring weights radar
+  const maxW = Math.max(...Object.values(weights));
+  drawRadar('radar-main', [
+    { label: 'Semantic', value: weights.w_semantic / maxW },
+    { label: 'Keyword', value: weights.w_keyword / maxW },
+    { label: 'Recency', value: weights.w_recency / maxW },
+    { label: 'Importance', value: weights.w_importance / maxW },
+    { label: 'Q-Value', value: weights.w_q_value / maxW },
+  ], 280);
+
+  // Q-layer weights radar
+  drawRadar('radar-q', [
+    { label: 'Action', value: qWeights.action },
+    { label: 'Hypothesis', value: qWeights.hypothesis / qWeights.action },
+    { label: 'Fit', value: qWeights.fit / qWeights.action },
+  ], 220);
+
+  // Config display
+  const configContainer = document.getElementById('scoring-config');
+  const statusW = D.scoring_config.status_weights;
+  Object.entries(statusW).forEach(([k,v]) => {
+    const div = document.createElement('div');
+    div.className = 'config-item';
+    div.innerHTML = `<div class="key">Status: ${k}</div><div class="val">×${v}</div>`;
+    configContainer.appendChild(div);
+  });
+})();
+
+// === Section E: Lifecycle ===
+(function drawLifecycle() {
+  const lc = D.lifecycle;
+  if (!lc || Object.keys(lc).length === 0) {
+    document.getElementById('lifecycle-chart').innerHTML = '<p style="color:var(--muted)">Lifecycle data unavailable (Qdrant not connected).</p>';
+    return;
+  }
+
+  const container = document.getElementById('lifecycle-chart');
+  const lcColors = {
+    active: '#3fb950', confirmed: '#56d364', outdated: '#d29922', archived: '#8b949e',
+    contradicted: '#f85149', merged: '#bc8cff', superseded: '#6e7681', deleted: '#484f58',
+    unlabeled: '#30363d',
+  };
+
+  const entries = Object.entries(lc).filter(([,v]) => v > 0);
+  const total = d3.sum(entries, d => d[1]);
+
+  const size = 260;
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${size} ${size}`)
+    .style('max-width', size + 'px').style('width', '100%');
+
+  const pie = d3.pie().value(d => d[1]).sort(null);
+  const arc = d3.arc().innerRadius(size/2 - 50).outerRadius(size/2 - 10);
+
+  svg.selectAll('path').data(pie(entries)).enter()
+    .append('path').attr('d', arc)
+    .attr('transform', `translate(${size/2},${size/2})`)
+    .attr('fill', d => lcColors[d.data[0]] || '#30363d')
+    .attr('stroke', '#161b22').attr('stroke-width', 2);
+
+  // Center text
+  svg.append('text').attr('x',size/2).attr('y',size/2 - 8)
+    .attr('text-anchor','middle').attr('fill','#e1e4e8').attr('font-size','24px').attr('font-weight','700')
+    .text(fmt(total));
+  svg.append('text').attr('x',size/2).attr('y',size/2 + 14)
+    .attr('text-anchor','middle').attr('fill','#8b949e').attr('font-size','12px')
+    .text('memories');
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.className = 'legend';
+  entries.forEach(([k,v]) => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.innerHTML = `<div class="legend-dot" style="background:${lcColors[k] || '#30363d'}"></div>
+      <span>${k}: <strong>${fmt(v)}</strong> (${fmtP(v/total)})</span>`;
+    legend.appendChild(item);
+  });
+  container.appendChild(legend);
+})();
+
+// === Section F: Session Timeline ===
+(function drawTimeline() {
+  // Merge observations + sessions by date
+  const obsMap = {};
+  (D.observations_timeline || []).forEach(d => { obsMap[d.date] = d.observations_count; });
+  const sessMap = {};
+  (D.sessions_by_date || []).forEach(d => { sessMap[d.date] = d.count; });
+
+  const allDates = [...new Set([...Object.keys(obsMap), ...Object.keys(sessMap)])].sort();
+  if (allDates.length === 0) { document.getElementById('session-chart').innerHTML = '<p style="color:var(--muted)">No session data.</p>'; return; }
+
+  const timelineData = allDates.map(d => ({
+    date: d3.timeParse('%Y-%m-%d')(d),
+    observations: obsMap[d] || 0,
+    sessions: sessMap[d] || 0,
+  })).filter(d => d.date);
+
+  const container = document.getElementById('session-chart');
+  const { width, height, margin } = chartDims(container);
+  const iw = width - margin.left - margin.right;
+  const ih = height - margin.top - margin.bottom;
+
+  const svg = d3.select(container).append('svg')
+    .attr('viewBox', `0 0 ${width} ${height}`)
+    .style('width','100%');
+  const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  const x = d3.scaleTime().domain(d3.extent(timelineData, d => d.date)).range([0, iw]);
+  const yObs = d3.scaleLinear().domain([0, d3.max(timelineData, d => d.observations) * 1.1]).range([ih, 0]);
+  const ySess = d3.scaleLinear().domain([0, d3.max(timelineData, d => d.sessions) * 1.2]).range([ih, 0]);
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${ih})`).call(d3.axisBottom(x).ticks(8).tickFormat(d3.timeFormat('%b %d')));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yObs).ticks(5));
+  g.append('g').attr('class','axis').attr('transform',`translate(${iw},0)`).call(d3.axisRight(ySess).ticks(4));
+
+  // Observations area
+  const area = d3.area().x(d => x(d.date)).y0(ih).y1(d => yObs(d.observations)).curve(d3.curveMonotoneX);
+  g.append('path').datum(timelineData).attr('d', area)
+    .attr('fill','rgba(188,140,255,0.15)').attr('stroke','#bc8cff').attr('stroke-width', 1.5);
+
+  // Sessions line
+  const line = d3.line().x(d => x(d.date)).y(d => ySess(d.sessions)).curve(d3.curveMonotoneX);
+  g.append('path').datum(timelineData).attr('d', line)
+    .attr('fill','none').attr('stroke','#d29922').attr('stroke-width', 2);
+  g.selectAll('.sess-dot').data(timelineData).enter().append('circle')
+    .attr('cx', d => x(d.date)).attr('cy', d => ySess(d.sessions))
+    .attr('r', 3).attr('fill','#d29922');
+
+  // Axis labels
+  g.append('text').attr('x', -10).attr('y', -8).attr('fill','#bc8cff').attr('font-size','11px').text('Observations');
+  g.append('text').attr('x', iw + 10).attr('y', -8).attr('fill','#d29922').attr('font-size','11px').attr('text-anchor','end').text('Sessions');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenExp — Session Replay</title>
+<style>
+:root {
+  --bg: #ffffff; --card: #f7f7f8; --border: #e5e5e6;
+  --text: #1a1a1a; --muted: #6b6b6f; --dim: #8e8e93;
+  --blue: #2563eb; --green: #16a34a; --amber: #d97706;
+  --red: #dc2626; --purple: #7c3aed; --cyan: #0891b2;
+  --surface: #f0f0f1;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', Menlo, Monaco, 'Courier New', monospace;
+  background: var(--bg); color: var(--text); line-height: 1.6; font-size: 13px;
+}
+
+/* Layout */
+.app { display: flex; height: 100vh; overflow: hidden; }
+.chat-panel { flex: 3; min-width: 0; display: flex; flex-direction: column; }
+.context-panel { flex: 2; min-width: 320px; max-width: 500px; display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow: hidden; }
+
+/* Terminal chrome header */
+.header {
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  background: var(--surface);
+}
+.window-dots { display: flex; gap: 6px; }
+.window-dots span { width: 12px; height: 12px; border-radius: 50%; }
+.dot-red { background: #ff5f57; }
+.dot-yellow { background: #febc2e; }
+.dot-green { background: #28c840; }
+.header-title { flex: 1; text-align: center; font-size: 12px; color: var(--dim); font-weight: 500; }
+.controls { display: flex; gap: 6px; align-items: center; }
+.btn {
+  padding: 4px 12px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 11px;
+  font-family: inherit; transition: all 0.15s; display: flex; align-items: center; gap: 4px;
+}
+.btn:hover { border-color: var(--blue); background: var(--card); }
+.btn.primary { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 600; }
+.btn.primary:hover { opacity: 0.9; }
+.speed { font-size: 11px; color: var(--dim); min-width: 28px; text-align: center; }
+
+/* Phase indicator */
+.phase-strip {
+  display: flex; align-items: center; justify-content: center; gap: 0;
+  padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.phase-node {
+  display: flex; align-items: center; gap: 5px; padding: 3px 10px;
+  border-radius: 3px; font-size: 10px; font-weight: 600;
+  border: 1px solid var(--border); color: var(--dim); transition: all 0.4s;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.phase-node .phase-num { font-size: 9px; width: 16px; height: 16px; border-radius: 3px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--dim); transition: all 0.4s;
+}
+.phase-node.active { color: var(--text); border-color: var(--green);
+  background: rgba(22,163,74,0.08);
+}
+.phase-node.active .phase-num { border-color: var(--green); color: var(--green); background: rgba(22,163,74,0.12); }
+.phase-node.done { color: var(--dim); }
+.phase-node.done .phase-num { border-color: var(--green); color: var(--green); }
+.phase-connector { width: 24px; height: 1px; background: var(--border); flex-shrink: 0; transition: background 0.4s; }
+.phase-connector.done { background: var(--green); }
+
+/* Progress */
+.progress-bar { height: 2px; background: var(--bg); flex-shrink: 0; }
+.progress-fill { height: 100%; background: var(--blue); transition: width 0.3s; width: 0; }
+.progress-info { padding: 4px 16px; font-size: 10px; color: var(--dim); border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+
+/* Terminal scroll area */
+.chat-scroll { flex: 1; overflow-y: auto; padding: 16px 20px; scroll-behavior: smooth; }
+
+/* Scenario card */
+.scenario-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 14px 16px; margin-bottom: 20px;
+  border-left: 3px solid var(--blue);
+}
+.scenario-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.scenario-desc { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+.scenario-criteria { display: flex; gap: 16px; }
+.scenario-col { flex: 1; }
+.scenario-col-header { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+.scenario-col-header.success { color: var(--green); }
+.scenario-col-header.failure { color: var(--red); }
+.scenario-item { font-size: 10px; color: var(--muted); padding: 1px 0; display: flex; gap: 5px; }
+.scenario-item .si-icon { flex-shrink: 0; font-size: 9px; margin-top: 2px; }
+.scenario-item.success .si-icon { color: var(--green); }
+.scenario-item.failure .si-icon { color: var(--red); }
+
+/* Beat groups */
+.beat-group {
+  margin-bottom: 16px; opacity: 0; transform: translateY(8px);
+  transition: opacity 0.3s ease-out, transform 0.3s ease-out;
+}
+.beat-group.visible { opacity: 1; transform: translateY(0); }
+
+/* === CLI-style messages === */
+
+/* User prompt: ❯ text */
+.cli-user {
+  margin-bottom: 8px; padding: 0;
+}
+.cli-user .prompt { color: var(--green); font-weight: 700; margin-right: 6px; }
+.cli-user .prompt-text { color: var(--text); }
+
+/* Claude response: indented text block */
+.cli-claude {
+  margin-bottom: 8px; padding: 2px 0 2px 20px;
+  border-left: 2px solid var(--purple); color: var(--text);
+}
+
+/* System message: dim centered */
+.cli-system {
+  margin-bottom: 8px; padding: 6px 12px;
+  color: var(--dim); font-size: 11px;
+  border: 1px solid var(--border); border-radius: 3px;
+  background: var(--surface); text-align: center;
+}
+.cli-system .sys-icon { margin-right: 4px; }
+
+/* Tool call block */
+.cli-tool {
+  margin-bottom: 6px; padding: 0 0 0 4px;
+}
+.cli-tool-header {
+  display: flex; align-items: center; gap: 6px; font-size: 12px;
+  padding: 3px 0; color: var(--muted);
+}
+.cli-tool-header .tool-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  transition: all 0.3s;
+}
+.tool-dot.pending { background: var(--dim); }
+.tool-dot.active { background: var(--blue); box-shadow: 0 0 4px rgba(37,99,235,0.4); animation: pulse 1.2s infinite; }
+.tool-dot.done { background: var(--green); }
+.cli-tool-header .tool-name { color: var(--amber); font-weight: 600; font-size: 11px; }
+.cli-tool-header .tool-desc { color: var(--muted); font-size: 11px; }
+.cli-tool-result {
+  margin: 2px 0 4px 18px; padding: 6px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  font-size: 11px; color: var(--text);
+  max-height: 0; overflow: hidden; transition: max-height 0.3s, padding 0.3s;
+}
+.cli-tool-result.expanded { max-height: 500px; }
+
+/* Email card (CLI style) */
+.email-card {
+  margin: 4px 0 8px 20px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  border-left: 3px solid var(--blue);
+}
+.email-card.sent { border-left-color: var(--green); }
+.ec-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 4px; }
+.ec-meta { font-size: 10px; color: var(--dim); }
+.ec-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 2px; }
+.ec-label.inbox { color: var(--blue); background: rgba(37,99,235,0.1); }
+.ec-label.sent { color: var(--green); background: rgba(22,163,74,0.1); }
+.ec-from { font-size: 11px; font-weight: 600; color: var(--text); }
+.ec-subject { font-size: 11px; font-weight: 600; color: var(--amber); margin: 2px 0 4px; }
+.ec-snippet { font-size: 11px; color: var(--muted); line-height: 1.5; white-space: pre-line; }
+.ec-status { margin-top: 6px; font-size: 10px; font-weight: 600; color: var(--green); }
+
+/* Memory results (CLI style) */
+.mem-results-card {
+  margin: 4px 0 8px 20px; padding: 8px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 3px;
+  border-left: 3px solid var(--cyan);
+}
+.mr-header { font-size: 11px; color: var(--cyan); font-weight: 600; margin-bottom: 2px; }
+.mr-query { font-size: 10px; color: var(--dim); margin-bottom: 6px; font-style: italic; }
+.mr-item {
+  display: flex; gap: 6px; padding: 3px 0; font-size: 10px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+.mr-item:last-child { border-bottom: none; }
+.mr-item .mr-icon { color: var(--cyan); flex-shrink: 0; font-size: 11px; }
+.mr-item .mr-content { flex: 1; min-width: 0; }
+.mr-item .mr-text { color: var(--text); font-size: 10px; }
+.mr-item .mr-meta { color: var(--dim); font-size: 9px; display: flex; gap: 6px; margin-top: 1px; }
+.mr-item .mr-q { color: var(--green); font-weight: 600; }
+.mr-item .mr-type { color: var(--amber); }
+
+/* Actions list (tool calls style) */
+.actions-toggle {
+  font-size: 10px; color: var(--dim); cursor: pointer; margin: 4px 0 2px 20px;
+  display: flex; align-items: center; gap: 4px;
+}
+.actions-toggle:hover { color: var(--blue); }
+.actions-toggle .arrow { transition: transform 0.2s; display: inline-block; font-size: 8px; }
+.actions-toggle .arrow.open { transform: rotate(90deg); }
+.actions-list { max-height: 0; overflow: hidden; transition: max-height 0.3s; margin-left: 20px; }
+.actions-list.expanded { max-height: 500px; }
+.action-item {
+  display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11px; color: var(--muted);
+}
+.action-item .dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--dim); transition: all 0.3s; font-size: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.action-item.completed .dot { background: var(--green); }
+.action-item.active .dot { background: var(--blue); box-shadow: 0 0 4px rgba(37,99,235,0.4); animation: pulse 1.2s infinite; }
+.action-item.completed { color: var(--text); }
+
+/* Outcome card */
+.outcome-card {
+  border-radius: 3px; padding: 10px 14px; margin-bottom: 12px;
+  border-left: 3px solid var(--green);
+}
+.outcome-card.productive { background: rgba(22,163,74,0.05); border: 1px solid rgba(22,163,74,0.2); border-left: 3px solid var(--green); }
+.outcome-card.mixed { background: rgba(37,99,235,0.05); border: 1px solid rgba(37,99,235,0.2); border-left: 3px solid var(--blue); }
+.outcome-card.unproductive { background: rgba(220,38,38,0.05); border: 1px solid rgba(220,38,38,0.2); border-left: 3px solid var(--red); }
+.outcome-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.outcome-emoji { font-size: 16px; }
+.outcome-label { font-size: 12px; font-weight: 700; }
+.outcome-card.productive .outcome-label { color: var(--green); }
+.outcome-card.mixed .outcome-label { color: var(--blue); }
+.outcome-card.unproductive .outcome-label { color: var(--red); }
+.outcome-achievement { font-size: 11px; color: var(--text); padding: 1px 0; display: flex; gap: 5px; }
+.outcome-achievement .oa-check { color: var(--green); }
+.outcome-metrics { font-size: 9px; color: var(--dim); margin-top: 6px; display: flex; gap: 10px; }
+.outcome-metrics span strong { color: var(--muted); }
+
+/* Reward beat */
+.reward-beat {
+  background: rgba(22,163,74,0.04); border: 1px solid rgba(22,163,74,0.2);
+  border-radius: 3px; padding: 14px 16px; position: relative; overflow: hidden;
+}
+.reward-beat::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at center, rgba(22,163,74,0.08) 0%, transparent 70%);
+  opacity: 0; transition: opacity 0.6s;
+}
+.reward-beat.glow::before { opacity: 1; }
+.reward-title { font-size: 12px; font-weight: 600; color: var(--green); margin-bottom: 4px; position: relative; }
+.reward-stat { font-size: 18px; font-weight: 700; color: var(--text); margin: 2px 0; position: relative; }
+.reward-sub { font-size: 10px; color: var(--muted); position: relative; margin-bottom: 4px; }
+
+/* Q-bars */
+.reward-q-bars { margin-top: 10px; position: relative; }
+.reward-q-section-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600; }
+.reward-q-section-label.positive { color: var(--green); }
+.reward-q-section-label.negative { color: var(--red); }
+.rq-card { margin-bottom: 6px; padding: 6px 8px; background: rgba(0,0,0,0.02); border-radius: 3px; border: 1px solid var(--border); }
+.rq-preview { font-size: 10px; color: var(--text); margin-bottom: 3px; }
+.rq-preview .rq-type { color: var(--amber); font-size: 8px; text-transform: uppercase; margin-right: 3px; font-weight: 600; }
+.rq-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; margin-bottom: 2px; }
+.rq-id { color: var(--dim); font-size: 9px; }
+.rq-transition { font-size: 11px; display: flex; align-items: center; gap: 3px; }
+.rq-transition .before { color: var(--dim); }
+.rq-transition .arrow { color: var(--muted); font-size: 9px; }
+.rq-transition .after { color: var(--text); font-weight: 600; }
+.rq-delta { font-size: 9px; font-weight: 600; padding: 1px 4px; border-radius: 2px; margin-left: 4px; }
+.rq-delta.pos { color: var(--green); background: rgba(22,163,74,0.1); }
+.rq-delta.neg { color: var(--red); background: rgba(220,38,38,0.1); }
+.rq-bars-row { display: flex; gap: 4px; align-items: center; }
+.rq-bars-row .rq-label { font-size: 8px; color: var(--dim); width: 30px; flex-shrink: 0; }
+.rq-bar-bg { height: 3px; background: rgba(0,0,0,0.06); border-radius: 2px; overflow: hidden; flex: 1; }
+.rq-bar { height: 100%; border-radius: 2px; transition: width 1s ease-out; width: 0; }
+.rq-bar.before { background: var(--dim); opacity: 0.5; }
+.rq-bar.after-pos { background: var(--green); box-shadow: 0 0 4px rgba(22,163,74,0.3); }
+.rq-bar.after-neg { background: var(--red); }
+.rq-bar.after-neutral { background: var(--blue); }
+
+/* Flash */
+.reward-flash {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at center, rgba(22,163,74,0.06) 0%, transparent 70%);
+  pointer-events: none; opacity: 0; transition: opacity 0.5s; z-index: 100;
+}
+.reward-flash.show { opacity: 1; }
+
+/* ===== Right Panel ===== */
+.flow-section {
+  padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  background: var(--surface);
+}
+.flow-section h3 { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+
+/* SVG Flow Diagram */
+.flow-svg { width: 100%; height: auto; display: block; }
+.flow-svg .node-rect { rx: 4; ry: 4; stroke-width: 1; transition: all 0.4s; }
+.flow-svg .node-rect.idle { fill: var(--card); stroke: var(--border); }
+.flow-svg .node-rect.active { stroke-width: 1.5; }
+.flow-svg .node-user.active { fill: rgba(37,99,235,0.08); stroke: var(--blue); filter: drop-shadow(0 0 3px rgba(37,99,235,0.2)); }
+.flow-svg .node-claude.active { fill: rgba(124,58,237,0.08); stroke: var(--purple); filter: drop-shadow(0 0 3px rgba(124,58,237,0.2)); }
+.flow-svg .node-memory.active { fill: rgba(8,145,178,0.08); stroke: var(--cyan); filter: drop-shadow(0 0 3px rgba(8,145,178,0.2)); }
+.flow-svg .node-tools.active { fill: rgba(217,119,6,0.08); stroke: var(--amber); filter: drop-shadow(0 0 3px rgba(217,119,6,0.2)); }
+.flow-svg .node-label { font-family: inherit; font-size: 10px; font-weight: 700; fill: var(--muted); text-anchor: middle; transition: fill 0.4s; }
+.flow-svg .node-label.active { fill: var(--text); font-weight: 800; }
+.flow-svg .node-sublabel { font-family: inherit; font-size: 7px; fill: var(--dim); text-anchor: middle; }
+.flow-svg .conn-line { stroke: var(--border); stroke-width: 1; stroke-dasharray: 3 3; fill: none; transition: all 0.4s; }
+.flow-svg .conn-line.active { stroke-width: 2; stroke-dasharray: none; }
+.flow-svg .conn-line.active-uc { stroke: var(--blue); }
+.flow-svg .conn-line.active-cm { stroke: var(--cyan); }
+.flow-svg .conn-line.active-ct { stroke: var(--amber); }
+.flow-svg .conn-arrow { fill: var(--border); transition: fill 0.4s; }
+.flow-svg .conn-arrow.active-uc { fill: var(--blue); }
+.flow-svg .conn-arrow.active-cm { fill: var(--cyan); }
+.flow-svg .conn-arrow.active-ct { fill: var(--amber); }
+.flow-svg .flow-label { font-family: inherit; font-size: 7px; fill: var(--dim); text-anchor: middle; opacity: 0; transition: opacity 0.3s; }
+.flow-svg .flow-label.visible { opacity: 1; fill: var(--text); }
+
+/* Activity log */
+.activity-header {
+  padding: 8px 16px; font-size: 10px; font-weight: 600; color: var(--dim);
+  text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.activity-log { flex: 1; overflow-y: auto; padding: 6px 12px; }
+.activity-entry {
+  font-size: 10px; color: var(--muted); padding: 3px 6px; border-radius: 2px;
+  margin-bottom: 1px; opacity: 0; transform: translateX(-4px);
+  transition: opacity 0.3s, transform 0.3s; display: flex; gap: 5px;
+}
+.activity-entry.visible { opacity: 1; transform: translateX(0); }
+.activity-entry .ae-icon { flex-shrink: 0; width: 12px; text-align: center; }
+.activity-entry.ae-user { background: rgba(37,99,235,0.05); }
+.activity-entry.ae-user .ae-icon { color: var(--blue); }
+.activity-entry.ae-claude { background: rgba(124,58,237,0.05); }
+.activity-entry.ae-claude .ae-icon { color: var(--purple); }
+.activity-entry.ae-memory { background: rgba(8,145,178,0.05); }
+.activity-entry.ae-memory .ae-icon { color: var(--cyan); }
+.activity-entry.ae-tools { background: rgba(217,119,6,0.05); }
+.activity-entry.ae-tools .ae-icon { color: var(--amber); }
+.activity-entry.ae-system { background: rgba(22,163,74,0.05); }
+.activity-entry.ae-system .ae-icon { color: var(--green); }
+
+/* Footer */
+.footer {
+  padding: 6px 16px; border-top: 1px solid var(--border); font-size: 10px;
+  color: var(--dim); text-align: center; flex-shrink: 0; background: var(--surface);
+}
+.footer a { color: var(--blue); text-decoration: none; }
+
+/* Sub-reveal */
+.beat-group .sub-reveal { opacity: 0; transform: translateY(4px); transition: opacity 0.3s ease, transform 0.3s ease; pointer-events: none; }
+.beat-group .sub-reveal.revealed { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+/* Typing cursor */
+.typing-cursor {
+  display: inline-block; width: 7px; height: 14px; background: var(--text);
+  margin-left: 1px; vertical-align: text-bottom; opacity: 0.7;
+  animation: blink-cursor 0.6s step-end infinite;
+}
+@keyframes blink-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+
+/* Thinking dots */
+.thinking-indicator { display: inline-flex; gap: 3px; padding: 4px 0 4px 20px; }
+.thinking-indicator .dot-bounce {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--dim);
+  animation: bounce-dot 1.2s ease-in-out infinite;
+}
+.thinking-indicator .dot-bounce:nth-child(2) { animation-delay: 0.15s; }
+.thinking-indicator .dot-bounce:nth-child(3) { animation-delay: 0.3s; }
+@keyframes bounce-dot { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+@media (max-width: 768px) {
+  .app { flex-direction: column; }
+  .chat-panel { height: 60vh; }
+  .context-panel { min-width: 0; max-width: none; height: 40vh; border-left: none; border-top: 1px solid var(--border); }
+}
+</style>
+</head>
+<body>
+
+<div class="reward-flash" id="reward-flash"></div>
+
+<div class="app">
+  <div class="chat-panel">
+    <div class="header">
+      <div class="window-dots">
+        <span class="dot-red"></span>
+        <span class="dot-yellow"></span>
+        <span class="dot-green"></span>
+      </div>
+      <div class="header-title">OpenExp &mdash; Session Replay</div>
+      <div class="controls">
+        <button class="btn" id="btn-prev" title="Previous">&larr;</button>
+        <button class="btn primary" id="btn-play">&#9654; Play</button>
+        <button class="btn" id="btn-next" title="Next">&rarr;</button>
+        <button class="btn" id="btn-speed"><span class="speed" id="speed-label">1x</span></button>
+      </div>
+    </div>
+
+    <div class="phase-strip">
+      <div class="phase-node" id="phase-request"><span class="phase-num">1</span> REQUEST</div>
+      <div class="phase-connector" id="conn-1"></div>
+      <div class="phase-node" id="phase-recall-act"><span class="phase-num">2</span> RECALL + ACT</div>
+      <div class="phase-connector" id="conn-2"></div>
+      <div class="phase-node" id="phase-learn"><span class="phase-num">3</span> LEARN</div>
+    </div>
+
+    <div class="progress-bar"><div class="progress-fill" id="progress"></div></div>
+    <div class="progress-info" id="progress-info"></div>
+    <div class="chat-scroll" id="chat-scroll"></div>
+    <div class="footer">
+      Generated by <a href="https://github.com/anthroos/openexp" target="_blank">OpenExp</a> &mdash; Q-Learning Memory for AI Agents
+    </div>
+  </div>
+
+  <div class="context-panel">
+    <div class="flow-section">
+      <h3>System Architecture</h3>
+      <svg class="flow-svg" viewBox="0 0 280 220" xmlns="http://www.w3.org/2000/svg">
+        <line id="fc-uc" class="conn-line" x1="140" y1="48" x2="140" y2="90"/>
+        <line id="fc-cm" class="conn-line" x1="110" y1="128" x2="65" y2="168"/>
+        <line id="fc-ct" class="conn-line" x1="170" y1="128" x2="215" y2="168"/>
+        <polygon id="fa-uc-down" class="conn-arrow" points="140,88 136,80 144,80"/>
+        <polygon id="fa-uc-up"   class="conn-arrow" points="140,50 136,58 144,58"/>
+        <polygon id="fa-cm-down" class="conn-arrow" points="65,166 60,158 70,158"/>
+        <polygon id="fa-cm-up"   class="conn-arrow" points="110,130 105,138 115,138"/>
+        <polygon id="fa-ct-down" class="conn-arrow" points="215,166 210,158 220,158"/>
+        <polygon id="fa-ct-up"   class="conn-arrow" points="170,130 165,138 175,138"/>
+        <text id="fl-uc" class="flow-label" x="156" y="72">request</text>
+        <text id="fl-cm" class="flow-label" x="72" y="148">query</text>
+        <text id="fl-ct" class="flow-label" x="208" y="148">action</text>
+        <rect id="fn-user" class="node-rect node-user idle" x="80" y="8" width="120" height="38"/>
+        <text class="node-label" id="nl-user" x="140" y="28">USER</text>
+        <text class="node-sublabel" x="140" y="40">requests &amp; approvals</text>
+        <rect id="fn-claude" class="node-rect node-claude idle" x="70" y="90" width="140" height="38"/>
+        <text class="node-label" id="nl-claude" x="140" y="110">CLAUDE</text>
+        <text class="node-sublabel" x="140" y="122">reasoning &amp; actions</text>
+        <rect id="fn-memory" class="node-rect node-memory idle" x="5" y="170" width="120" height="38"/>
+        <text class="node-label" id="nl-memory" x="65" y="190">MEMORY</text>
+        <text class="node-sublabel" x="65" y="202">Q-ranked (847)</text>
+        <rect id="fn-tools" class="node-rect node-tools idle" x="155" y="170" width="120" height="38"/>
+        <text class="node-label" id="nl-tools" x="215" y="190">TOOLS</text>
+        <text class="node-sublabel" x="215" y="202">Gmail, CRM, code</text>
+      </svg>
+    </div>
+    <div class="activity-header">Activity Log</div>
+    <div class="activity-log" id="activity-log">
+      <div style="text-align:center;padding:20px 0;color:var(--dim);font-size:11px;">
+        Press <strong style="color:var(--text)">Play</strong> to start
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DATA_PLACEHOLDER -->
+
+<script>
+const D = REPLAY_DATA;
+const beats = D.beats || [];
+const qValues = D.memory_q_values;
+const qConfig = D.q_config;
+const scenario = D.scenario || {};
+const outcome = D.outcome || {};
+
+let currentBeat = -1;
+let playing = false;
+let speed = 1;
+const speeds = [0.5, 1, 2, 4];
+let speedIdx = 1;
+
+// Phase indicator
+const phaseNodes = {
+  request: document.getElementById('phase-request'),
+  recallAct: document.getElementById('phase-recall-act'),
+  learn: document.getElementById('phase-learn'),
+};
+const phaseConns = [document.getElementById('conn-1'), document.getElementById('conn-2')];
+
+function setPhase(phase) {
+  Object.values(phaseNodes).forEach(n => n.className = 'phase-node');
+  phaseConns.forEach(c => c.className = 'phase-connector');
+  if (phase === 'request') { phaseNodes.request.classList.add('active'); }
+  else if (phase === 'work') {
+    phaseNodes.request.classList.add('done'); phaseConns[0].classList.add('done');
+    phaseNodes.recallAct.classList.add('active');
+  } else if (phase === 'reward') {
+    phaseNodes.request.classList.add('done'); phaseNodes.recallAct.classList.add('done');
+    phaseConns[0].classList.add('done'); phaseConns[1].classList.add('done');
+    phaseNodes.learn.classList.add('active');
+  }
+}
+
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+// Flow diagram
+const flowNodes={user:document.getElementById('fn-user'),claude:document.getElementById('fn-claude'),memory:document.getElementById('fn-memory'),tools:document.getElementById('fn-tools')};
+const flowLabels={user:document.getElementById('nl-user'),claude:document.getElementById('nl-claude'),memory:document.getElementById('nl-memory'),tools:document.getElementById('nl-tools')};
+const flowConns={uc:document.getElementById('fc-uc'),cm:document.getElementById('fc-cm'),ct:document.getElementById('fc-ct')};
+const flowArrows={uc_down:document.getElementById('fa-uc-down'),uc_up:document.getElementById('fa-uc-up'),cm_down:document.getElementById('fa-cm-down'),cm_up:document.getElementById('fa-cm-up'),ct_down:document.getElementById('fa-ct-down'),ct_up:document.getElementById('fa-ct-up')};
+const flowLabelsText={uc:document.getElementById('fl-uc'),cm:document.getElementById('fl-cm'),ct:document.getElementById('fl-ct')};
+
+function resetFlow() {
+  Object.values(flowNodes).forEach(n=>{n.classList.remove('active');if(!n.classList.contains('idle'))n.classList.add('idle')});
+  Object.values(flowLabels).forEach(l=>l.classList.remove('active'));
+  Object.values(flowConns).forEach(c=>{c.classList.remove('active','active-uc','active-cm','active-ct');});
+  Object.values(flowArrows).forEach(a=>{a.classList.remove('active-uc','active-cm','active-ct');});
+  Object.values(flowLabelsText).forEach(l=>l.classList.remove('visible'));
+}
+
+function setFlow(flowList) {
+  resetFlow();
+  if(!flowList||!flowList.length)return;
+  flowList.forEach(f=>{
+    if(f==='user_to_claude'){actN('user');actN('claude');flowConns.uc.classList.add('active','active-uc');flowArrows.uc_down.classList.add('active-uc');flowLabelsText.uc.textContent='request';flowLabelsText.uc.classList.add('visible')}
+    else if(f==='claude_to_user'){actN('claude');actN('user');flowConns.uc.classList.add('active','active-uc');flowArrows.uc_up.classList.add('active-uc');flowLabelsText.uc.textContent='response';flowLabelsText.uc.classList.add('visible')}
+    else if(f==='claude_to_memory'){actN('claude');actN('memory');flowConns.cm.classList.add('active','active-cm');flowArrows.cm_down.classList.add('active-cm');flowLabelsText.cm.textContent='query';flowLabelsText.cm.classList.add('visible')}
+    else if(f==='memory_to_claude'){actN('memory');actN('claude');flowConns.cm.classList.add('active','active-cm');flowArrows.cm_up.classList.add('active-cm');flowLabelsText.cm.textContent='context';flowLabelsText.cm.classList.add('visible')}
+    else if(f==='claude_to_tools'){actN('claude');actN('tools');flowConns.ct.classList.add('active','active-ct');flowArrows.ct_down.classList.add('active-ct');flowLabelsText.ct.textContent='action';flowLabelsText.ct.classList.add('visible')}
+    else if(f==='tools_to_claude'){actN('tools');actN('claude');flowConns.ct.classList.add('active','active-ct');flowArrows.ct_up.classList.add('active-ct');flowLabelsText.ct.textContent='result';flowLabelsText.ct.classList.add('visible')}
+  });
+}
+function actN(name){const n=flowNodes[name],l=flowLabels[name];if(n){n.classList.remove('idle');n.classList.add('active')}if(l)l.classList.add('active')}
+
+// Activity log
+const activityLog = document.getElementById('activity-log');
+function addActivity(text, type) {
+  if(!text)return;
+  if(activityLog.querySelector('div[style]'))activityLog.innerHTML='';
+  const e=document.createElement('div');
+  const cls={user:'ae-user',memory:'ae-memory',tools:'ae-tools',system:'ae-system'}[type]||'ae-claude';
+  const icons={user:'\u2197',claude:'\u2199',memory:'\ud83e\udde0',tools:'\u2699',system:'\u26a1'};
+  e.className='activity-entry '+cls;
+  e.innerHTML='<span class="ae-icon">'+(icons[type]||'\u2022')+'</span>'+escHtml(text);
+  activityLog.appendChild(e);
+  requestAnimationFrame(()=>e.classList.add('visible'));
+  activityLog.scrollTop=activityLog.scrollHeight;
+}
+
+// Progress info
+document.getElementById('progress-info').textContent =
+  `${D.meta.session_id} \u00b7 ${D.meta.date} \u00b7 ${D.meta.total_observations} actions \u00b7 ${D.meta.memories_retrieved} memories`;
+
+// Build scenario card
+const chatScroll = document.getElementById('chat-scroll');
+if (scenario.title) {
+  const sc = document.createElement('div');
+  sc.className = 'scenario-card';
+  sc.innerHTML = `
+    <div class="scenario-title">${escHtml(scenario.title)}</div>
+    <div class="scenario-desc">${escHtml(scenario.story||'')}</div>
+    ${scenario.challenge?`<div class="scenario-desc" style="color:var(--amber)">${escHtml(scenario.challenge)}</div>`:''}
+    <div class="scenario-criteria">
+      <div class="scenario-col">
+        <div class="scenario-col-header success">Success</div>
+        ${(scenario.success_criteria||[]).map(s=>`<div class="scenario-item success"><span class="si-icon">\u2713</span>${escHtml(s)}</div>`).join('')}
+      </div>
+      <div class="scenario-col">
+        <div class="scenario-col-header failure">Failure</div>
+        ${(scenario.failure_criteria||[]).map(s=>`<div class="scenario-item failure"><span class="si-icon">\u2717</span>${escHtml(s)}</div>`).join('')}
+      </div>
+    </div>`;
+  chatScroll.appendChild(sc);
+}
+
+// Render conversation entry as CLI-style HTML
+function renderConvEntry(conv, bi) {
+  const ct = conv.content_type || 'text';
+  const flowAttr = `data-flow='${JSON.stringify(conv.flow||[])}' data-activity="${escHtml(conv.activity||'')}"`;
+
+  if (ct === 'email_card') {
+    const e = conv.email || {};
+    return `<div class="email-card sub-reveal" ${flowAttr}>
+      <div class="ec-header"><div><div class="ec-from">${escHtml(e.from||'')}</div><div class="ec-meta">${escHtml(e.date||'')}</div></div><span class="ec-label inbox">INBOX</span></div>
+      <div class="ec-subject">${escHtml(e.subject||'')}</div>
+      <div class="ec-snippet">${escHtml(e.snippet||'')}</div>
+    </div>`;
+  }
+  if (ct === 'email_sent') {
+    const e = conv.email || {};
+    return `<div class="email-card sent sub-reveal" ${flowAttr}>
+      <div class="ec-header"><div><div class="ec-from">To: ${escHtml(e.to||'')}</div></div><span class="ec-label sent">SENT \u2713</span></div>
+      <div class="ec-subject">${escHtml(e.subject||'')}</div>
+      <div class="ec-snippet">${escHtml(e.snippet||'')}</div>
+    </div>`;
+  }
+  if (ct === 'memory_results') {
+    const mems = conv.memories || [];
+    return `<div class="mem-results-card sub-reveal" data-memreveal="true" ${flowAttr}>
+      <div class="mr-header">\ud83d\udd0d Retrieved ${mems.length} memories</div>
+      ${conv.query?`<div class="mr-query">search_memory("${escHtml(conv.query)}")</div>`:''}
+      ${mems.map(m=>`<div class="mr-item">
+        <span class="mr-icon">\ud83e\udde0</span>
+        <div class="mr-content">
+          <div class="mr-text">${escHtml(m.preview||'')}</div>
+          <div class="mr-meta"><span class="mr-type">${escHtml(m.type||'')}</span><span class="mr-q">Q=${(m.q_value||0).toFixed(2)}</span><span>score=${(m.score||0).toFixed(2)}</span></div>
+        </div>
+      </div>`).join('')}
+    </div>`;
+  }
+  if (conv.role === 'system') {
+    return `<div class="cli-system sub-reveal" ${flowAttr}><span class="sys-icon">\u26a1</span>${escHtml(conv.text||'')}</div>`;
+  }
+  if (conv.role === 'user') {
+    return `<div class="cli-user sub-reveal" data-typewriter="true" ${flowAttr}><span class="prompt">\u276f</span><span class="prompt-text type-target" data-typetext="${escHtml(conv.text||'')}"></span></div>`;
+  }
+  // assistant — CLI style with purple border
+  return `<div class="cli-claude sub-reveal" data-typewriter="true" data-typespeed="fast" ${flowAttr}><span class="type-target" data-typetext="${escHtml(conv.text||'')}"></span></div>`;
+}
+
+// Build beat elements
+const beatElements = [];
+
+beats.forEach((beat, bi) => {
+  const group = document.createElement('div');
+  group.className = 'beat-group';
+  group.dataset.beatIndex = bi;
+
+  if (beat.type === 'system_start') {
+    if (beat.conversation && beat.conversation[0] && beat.conversation[0].content_type) {
+      group.innerHTML = beat.conversation.map(c => renderConvEntry(c, bi)).join('');
+    } else {
+      group.innerHTML = `<div class="cli-system sub-reveal"><span class="sys-icon">\u26a1</span>Session initialized...</div>`;
+    }
+  } else if (beat.type === 'system_end') {
+    const ri = beat.reward_info || {};
+    const memUpdated = ri.memories_updated || 0;
+    const oc = outcome;
+    const vc = (oc.verdict==='productive'||oc.verdict==='mostly_productive')?'productive':oc.verdict==='unproductive'?'unproductive':'mixed';
+
+    let sysHtml = '';
+    if (beat.conversation && beat.conversation[0] && beat.conversation[0].content_type) {
+      sysHtml = beat.conversation.map(c => renderConvEntry(c, bi)).join('');
+    }
+
+    let outcomeHtml = `<div class="outcome-card ${vc}">
+      <div class="outcome-header"><span class="outcome-emoji">${escHtml(oc.verdict_emoji||'')}</span><span class="outcome-label">${escHtml(oc.verdict_label||'')}</span></div>
+      ${(oc.achievements||[]).map(a=>`<div class="outcome-achievement"><span class="oa-check">\u2713</span>${escHtml(a)}</div>`).join('')}
+      <div class="outcome-metrics"><span><strong>${(oc.metrics||{}).actions_taken||0}</strong> actions</span><span><strong>${(oc.metrics||{}).memories_reinforced||0}</strong> reinforced</span></div>
+    </div>`;
+
+    const allMems = Object.entries(qValues);
+    const posMems = allMems.filter(([,q])=>q.reward_direction==='positive');
+    const negMems = allMems.filter(([,q])=>q.reward_direction==='negative');
+
+    function rqCard(id, q) {
+      const qB=q.combined_before!=null?q.combined_before:q.combined, qA=q.combined, d=q.combined_delta||0;
+      const pB=Math.max(0,((qB+0.5)/1.5)*100), pA=Math.max(0,((qA+0.5)/1.5)*100);
+      const dc=d>0?'pos':d<0?'neg':'pos', bc=d>0?'after-pos':d<0?'after-neg':'after-neutral';
+      return `<div class="rq-card">
+        ${q.preview?`<div class="rq-preview">${q.memory_type?'<span class="rq-type">'+escHtml(q.memory_type)+'</span>':''}${escHtml(q.preview)}</div>`:''}
+        <div class="rq-header"><span class="rq-id">${id}</span>
+          <div class="rq-transition"><span class="before">${qB.toFixed(3)}</span><span class="arrow">\u2192</span><span class="after">${qA.toFixed(3)}</span><span class="rq-delta ${dc}">${d>0?'+':''}${d.toFixed(3)}</span></div>
+        </div>
+        <div class="rq-bars-row"><span class="rq-label">before</span><div class="rq-bar-bg"><div class="rq-bar before" style="width:${pB}%"></div></div></div>
+        <div class="rq-bars-row" style="margin-top:1px"><span class="rq-label">after</span><div class="rq-bar-bg"><div class="rq-bar ${bc}" data-pct="${pA}"></div></div></div>
+      </div>`;
+    }
+
+    let qHtml = '<div class="reward-q-bars">';
+    if(posMems.length>0){qHtml+='<div class="reward-q-section-label positive">\u2191 Reinforced ('+posMems.length+')</div>';posMems.forEach(([id,q])=>qHtml+=rqCard(id,q))}
+    if(negMems.length>0){qHtml+='<div class="reward-q-section-label negative" style="margin-top:8px">\u2193 Penalized ('+negMems.length+')</div>';negMems.forEach(([id,q])=>qHtml+=rqCard(id,q))}
+    if(!posMems.length&&!negMems.length){qHtml+='<div class="reward-q-section-label positive">Updated</div>';allMems.slice(0,3).forEach(([id,q])=>qHtml+=rqCard(id,q))}
+    qHtml+='</div>';
+
+    group.innerHTML = `${sysHtml}
+      <div class="sub-reveal">${outcomeHtml}</div>
+      <div class="reward-beat sub-reveal" id="reward-beat">
+        <div class="reward-title">\u2605 Q-Value Update</div>
+        <div class="reward-stat">${memUpdated} memories updated</div>
+        <div class="reward-sub">Q = Q + \u03b1\u00d7reward (\u03b1=${ri.alpha||0.25})</div>
+        ${qHtml}
+      </div>`;
+  } else {
+    // user_turn / auto
+    let html = '';
+    const conv = beat.conversation || [];
+    const actions = beat.actions || [];
+
+    if (conv.length > 0 && conv[0].content_type) {
+      // Rich mode
+      let lastClaude = -1;
+      conv.forEach((c,i)=>{if(c.role==='assistant'&&(c.content_type||'text')==='text'&&c.text)lastClaude=i});
+
+      conv.forEach((c, ci) => {
+        if (ci === 1 && c.role === 'assistant') {
+          html += `<div class="sub-reveal" data-thinking="true"><div class="thinking-indicator"><div class="dot-bounce"></div><div class="dot-bounce"></div><div class="dot-bounce"></div></div></div>`;
+        }
+        html += renderConvEntry(c, bi);
+        if (ci === lastClaude && actions.length > 0) {
+          html += `<div class="sub-reveal" style="margin-left:20px;">
+            <div class="actions-toggle" data-beat="${bi}"><span class="arrow">\u25b6</span> Actions (${actions.length})</div>
+            <div class="actions-list" id="actions-${bi}">
+              ${actions.map((a,ai)=>`<div class="action-item pending" data-action="${ai}"><div class="dot"></div><span>${escHtml(a.label)}</span></div>`).join('')}
+            </div>
+          </div>`;
+        }
+      });
+    } else {
+      // Legacy
+      const userMsg = conv.find(m=>m.role==='user');
+      const assistantMsg = conv.find(m=>m.role==='assistant');
+      const beatMems = beat.memories_recalled || [];
+
+      if (userMsg) {
+        html += `<div class="cli-user sub-reveal" data-typewriter="true"><span class="prompt">\u276f</span><span class="prompt-text type-target" data-typetext="${escHtml(userMsg.text)}"></span></div>`;
+      }
+      if (beatMems.length > 0) {
+        html += `<div class="mem-results-card sub-reveal" data-memreveal="true">
+          <div class="mr-header">\ud83d\udd0d Retrieved ${beatMems.length} memories</div>
+          ${beatMems.map(m=>`<div class="mr-item"><span class="mr-icon">\ud83e\udde0</span><div class="mr-content"><div class="mr-text">${escHtml((qValues[m.id]||{}).preview||'Memory '+m.id)}</div><div class="mr-meta"><span class="mr-q">Q=${m.q_combined.toFixed(2)}</span></div></div></div>`).join('')}
+        </div>`;
+      }
+      if (assistantMsg || actions.length > 0) {
+        html += `<div class="sub-reveal" data-thinking="true"><div class="thinking-indicator"><div class="dot-bounce"></div><div class="dot-bounce"></div><div class="dot-bounce"></div></div></div>`;
+        let actHtml = actions.length > 0 ? `<div class="actions-toggle" data-beat="${bi}"><span class="arrow">\u25b6</span> Actions (${actions.length})</div>
+          <div class="actions-list" id="actions-${bi}">${actions.map((a,ai)=>`<div class="action-item pending" data-action="${ai}"><div class="dot"></div><span>${escHtml(a.label)}</span></div>`).join('')}</div>` : '';
+        html += `<div class="cli-claude sub-reveal" data-typewriter="true" data-typespeed="fast"><span class="type-target" data-typetext="${escHtml(assistantMsg?assistantMsg.text:beat.subtitle)}"></span>${actHtml}</div>`;
+      }
+    }
+    group.innerHTML = html;
+  }
+
+  chatScroll.appendChild(group);
+  beatElements.push(group);
+});
+
+// Actions toggle
+document.addEventListener('click', e => {
+  const t = e.target.closest('.actions-toggle');
+  if (!t) return;
+  const list = document.getElementById('actions-' + t.dataset.beat);
+  const arrow = t.querySelector('.arrow');
+  if (list) { list.classList.toggle('expanded'); arrow.classList.toggle('open'); }
+});
+
+// Reveal timers
+let revealTimers = [];
+function clearRevealTimers() { revealTimers.forEach(t=>clearTimeout(t)); revealTimers=[]; }
+
+function typeText(el, text, charDelay, onDone) {
+  el.textContent = '';
+  const cursor = document.createElement('span');
+  cursor.className = 'typing-cursor';
+  el.parentNode.appendChild(cursor);
+  let i = 0;
+  function next() {
+    if (i < text.length) { el.textContent += text[i]; i++; revealTimers.push(setTimeout(next, charDelay/speed)); }
+    else { cursor.remove(); if(onDone)onDone(); }
+  }
+  next();
+}
+
+function revealBeatSequence(beatEl, beatIdx, onAllDone) {
+  const items = Array.from(beatEl.querySelectorAll('.sub-reveal'));
+  let idx = 0;
+
+  function revealNext() {
+    if (idx >= items.length) { if(onAllDone)onAllDone(); return; }
+    const item = items[idx]; idx++;
+
+    // Flow + activity
+    try { const fd=item.dataset.flow; if(fd)setFlow(JSON.parse(fd)); } catch(e){}
+    const act=item.dataset.activity;
+    if(act){ const fl=item.dataset.flow?JSON.parse(item.dataset.flow):[]; const f0=fl[0]||'';
+      let at=f0.startsWith('user')?'user':f0.includes('memory')?'memory':f0.includes('tools')?'tools':item.classList.contains('cli-system')?'system':'claude';
+      addActivity(act,at);
+    }
+
+    // Thinking dots
+    if (item.dataset.thinking) {
+      item.classList.add('revealed'); scrollToEl(item);
+      revealTimers.push(setTimeout(()=>{item.style.display='none';revealNext()}, 1200/speed));
+      return;
+    }
+
+    item.classList.add('revealed'); scrollToEl(item);
+
+    // Typewriter
+    if (item.dataset.typewriter !== undefined) {
+      const target = item.querySelector('.type-target');
+      if (target) {
+        const text = target.dataset.typetext || '';
+        const fast = item.dataset.typespeed === 'fast';
+        typeText(target, text, fast?18:38, ()=>revealTimers.push(setTimeout(revealNext,(fast?400:700)/speed)));
+        return;
+      }
+    }
+
+    // Memory stagger
+    if (item.dataset.memreveal !== undefined) {
+      const cards = item.querySelectorAll('.mr-item');
+      cards.forEach((c,ci)=>{c.style.opacity='0';c.style.transform='translateY(6px)';
+        revealTimers.push(setTimeout(()=>{c.style.transition='all 0.3s';c.style.opacity='1';c.style.transform='translateY(0)'},ci*250/speed))});
+      revealTimers.push(setTimeout(revealNext,(cards.length*250+400)/speed));
+      return;
+    }
+
+    // Actions
+    const ai = item.querySelectorAll('.action-item');
+    if (ai.length > 0) {
+      const al=item.querySelector('.actions-list'), ar=item.querySelector('.arrow');
+      if(al)al.classList.add('expanded'); if(ar)ar.classList.add('open');
+      animateActions(ai,0,revealNext); return;
+    }
+
+    revealTimers.push(setTimeout(revealNext, 400/speed));
+  }
+  revealTimers.push(setTimeout(revealNext, 200/speed));
+}
+
+function scrollToEl(el) { el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+
+function goToBeat(i) {
+  if(i<0||i>=beats.length)return;
+  clearRevealTimers(); currentBeat=i;
+
+  const beat=beats[i];
+  if(beat.type==='system_start')setPhase('start');
+  else if(beat.type==='system_end')setPhase('reward');
+  else setPhase('work');
+
+  beatElements.forEach((el,idx)=>{
+    if(idx<i){
+      el.classList.add('visible');
+      el.querySelectorAll('.sub-reveal').forEach(s=>s.classList.add('revealed'));
+      el.querySelectorAll('[data-thinking]').forEach(s=>s.style.display='none');
+      el.querySelectorAll('.type-target').forEach(t=>t.textContent=t.dataset.typetext||'');
+      el.querySelectorAll('.typing-cursor').forEach(c=>c.remove());
+      el.querySelectorAll('.action-item').forEach(a=>{a.className='action-item completed';a.querySelector('.dot').textContent='\u2713'});
+      el.querySelectorAll('.actions-list').forEach(l=>l.classList.add('expanded'));
+      el.querySelectorAll('.mr-item').forEach(m=>{m.style.opacity='1';m.style.transform='translateY(0)'});
+    } else if(idx>i){
+      el.classList.remove('visible');
+      el.querySelectorAll('.sub-reveal').forEach(s=>s.classList.remove('revealed'));
+      el.querySelectorAll('[data-thinking]').forEach(s=>s.style.display='');
+      el.querySelectorAll('.type-target').forEach(t=>t.textContent='');
+      el.querySelectorAll('.typing-cursor').forEach(c=>c.remove());
+      el.querySelectorAll('.action-item').forEach(a=>{a.className='action-item pending';a.querySelector('.dot').textContent=''});
+      el.querySelectorAll('.actions-list').forEach(l=>l.classList.remove('expanded'));
+      el.querySelectorAll('.arrow').forEach(a=>a.classList.remove('open'));
+    }
+  });
+
+  const cur=beatElements[i];
+  cur.classList.add('visible');
+  cur.querySelectorAll('.sub-reveal').forEach(s=>s.classList.remove('revealed'));
+  cur.querySelectorAll('[data-thinking]').forEach(s=>s.style.display='');
+  cur.querySelectorAll('.type-target').forEach(t=>t.textContent='');
+  cur.querySelectorAll('.typing-cursor').forEach(c=>c.remove());
+  cur.querySelectorAll('.action-item').forEach(a=>{a.className='action-item pending';a.querySelector('.dot').textContent=''});
+  cur.querySelectorAll('.actions-list').forEach(l=>l.classList.remove('expanded'));
+  cur.querySelectorAll('.arrow').forEach(a=>a.classList.remove('open'));
+
+  document.getElementById('progress').style.width=((i+1)/beats.length*100)+'%';
+
+  revealBeatSequence(cur,i,()=>{
+    if(beats[i].type==='system_end'){
+      const flash=document.getElementById('reward-flash');
+      flash.classList.add('show'); setTimeout(()=>flash.classList.remove('show'),800);
+      const rb=document.getElementById('reward-beat');
+      if(rb){setTimeout(()=>rb.classList.add('glow'),100);
+        setTimeout(()=>rb.querySelectorAll('.rq-bar[data-pct]').forEach((b,bi)=>setTimeout(()=>b.style.width=b.dataset.pct+'%',bi*120)),300)}
+    }
+    if(playing)revealTimers.push(setTimeout(playNext,1200/speed));
+  });
+}
+
+function animateActions(items,idx,onDone){
+  if(idx>=items.length){if(onDone)onDone();return}
+  items[idx].className='action-item active';items[idx].querySelector('.dot').textContent='\u25cf';
+  revealTimers.push(setTimeout(()=>{
+    items[idx].className='action-item completed';items[idx].querySelector('.dot').textContent='\u2713';
+    animateActions(items,idx+1,onDone);
+  },(600+Math.random()*800)/speed));
+}
+
+const btnPlay=document.getElementById('btn-play'),btnPrev=document.getElementById('btn-prev'),btnNext=document.getElementById('btn-next'),btnSpeed=document.getElementById('btn-speed');
+btnPlay.onclick=()=>playing?stopPlay():startPlay();
+btnPrev.onclick=()=>{playing=false;btnPlay.innerHTML='&#9654; Play';clearRevealTimers();goToBeat(Math.max(0,currentBeat-1))};
+btnNext.onclick=()=>{playing=false;btnPlay.innerHTML='&#9654; Play';clearRevealTimers();goToBeat(Math.min(beats.length-1,currentBeat+1))};
+btnSpeed.onclick=()=>{speedIdx=(speedIdx+1)%speeds.length;speed=speeds[speedIdx];document.getElementById('speed-label').textContent=speed+'x'};
+
+function startPlay(){playing=true;btnPlay.innerHTML='\u23f8 Pause';if(currentBeat<0||currentBeat>=beats.length-1){currentBeat=-1;activityLog.innerHTML='';resetFlow()}playNext()}
+function stopPlay(){playing=false;btnPlay.innerHTML='&#9654; Play';clearRevealTimers()}
+function playNext(){if(!playing)return;const n=currentBeat+1;if(n>=beats.length){stopPlay();return}goToBeat(n)}
+
+document.addEventListener('keydown',e=>{
+  if(e.key===' '||e.key==='k'){e.preventDefault();btnPlay.click()}
+  if(e.key==='ArrowRight'||e.key==='l')btnNext.click();
+  if(e.key==='ArrowLeft'||e.key==='j')btnPrev.click();
+});
+</script>
+</body>
+</html>
