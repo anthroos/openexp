@@ -44,6 +44,10 @@ INGEST_BATCH_SIZE = int(os.getenv("OPENEXP_INGEST_BATCH_SIZE", "50"))
 # Enrichment model (optional — requires ANTHROPIC_API_KEY)
 ENRICHMENT_MODEL = os.getenv("OPENEXP_ENRICHMENT_MODEL", "claude-haiku-4-5-20251001")
 
+# L4: LLM-generated reward explanations (default: Opus for deep understanding)
+EXPLANATION_MODEL = os.getenv("OPENEXP_EXPLANATION_MODEL", "claude-opus-4-6")
+EXPLANATION_ENABLED = os.getenv("OPENEXP_EXPLANATION_ENABLED", "true").lower() == "true"
+
 # Outcome resolvers (format: "module:ClassName,module2:ClassName2")
 OUTCOME_RESOLVERS = os.getenv("OPENEXP_OUTCOME_RESOLVERS", "").strip()
 
