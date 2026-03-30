@@ -52,7 +52,7 @@ def ingest_session(
     """Full ingest pipeline: observations + sessions + reward."""
     from .observation import ingest_observations
     from .session_summary import ingest_sessions
-    from .reward import compute_session_reward, apply_session_reward, reward_retrieved_memories, _build_session_reward_context
+    from .reward import compute_session_reward, reward_retrieved_memories, _build_session_reward_context
 
     result = {}
 
@@ -68,34 +68,42 @@ def ingest_session(
     if dry_run:
         return result
 
+    # Clean up internal fields from observation result
     obs_data = result.get("observations", {})
-    point_ids = obs_data.pop("_point_ids", [])
+    obs_data.pop("_point_ids", [])
     raw_obs = obs_data.pop("_raw_observations", [])
 
-    if point_ids and raw_obs:
-        reward = compute_session_reward(raw_obs)
-        if reward != 0.0:
-            reward_ctx = _build_session_reward_context(raw_obs, reward)
-            updated = apply_session_reward(
-                point_ids, reward, reward_context=reward_ctx,
-                observations=raw_obs, session_id=session_id,
-            )
-            result["reward"] = {"applied": True, "value": reward, "updated": updated}
-            logger.info("Session reward=%.2f applied to %d memories", reward, updated)
-        else:
-            result["reward"] = {"applied": False, "value": 0.0, "reason": "neutral session"}
-            reward_ctx = None
+    # --- Session Reward: reward RECALLED memories, not ingested ones ---
+    # Filter observations to THIS session only (fixes cumulative counting bug)
+    if session_id and raw_obs:
+        session_obs = [o for o in raw_obs if session_id in o.get("session_id", "")]
     else:
-        result["reward"] = {"applied": False, "reason": "no new observations"}
-        reward_ctx = None
+        session_obs = raw_obs
 
-    if session_id:
-        reward_val = result.get("reward", {}).get("value", 0.0)
-        if reward_val and reward_val != 0.0:
-            retrieved_updated = reward_retrieved_memories(session_id, reward_val, reward_context=reward_ctx)
-            result["reward"]["retrieved_memories_rewarded"] = retrieved_updated
+    if session_id and session_obs:
+        reward = compute_session_reward(session_obs)
+        if reward != 0.0:
+            reward_ctx = _build_session_reward_context(session_obs, reward)
+            # Reward only memories that were RECALLED at session start (closed loop)
+            retrieved_updated = reward_retrieved_memories(
+                session_id, reward, reward_context=reward_ctx,
+            )
+            result["reward"] = {
+                "applied": True,
+                "value": reward,
+                "retrieved_memories_rewarded": retrieved_updated,
+                "session_observations": len(session_obs),
+            }
+            logger.info(
+                "Session reward=%.2f applied to %d retrieved memories (from %d session obs)",
+                reward, retrieved_updated, len(session_obs),
+            )
         else:
-            result["reward"]["retrieved_memories_rewarded"] = 0
+            result["reward"] = {"applied": False, "value": 0.0, "reason": "neutral session", "retrieved_memories_rewarded": 0}
+    elif not session_id:
+        result["reward"] = {"applied": False, "reason": "no session_id provided", "retrieved_memories_rewarded": 0}
+    else:
+        result["reward"] = {"applied": False, "reason": "no observations for this session", "retrieved_memories_rewarded": 0}
 
     # Run outcome resolvers (CRM stage transitions, etc.)
     try:
