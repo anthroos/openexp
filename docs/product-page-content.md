@@ -7,17 +7,17 @@
 
 ## Headline
 
-**Your AI sessions don't learn from each other. OpenExp fixes that.**
+**Your AI doesn't learn from outcomes. OpenExp fixes that.**
 
 ## Subheadline
 
-Persistent memory for Claude Code with Q-learning. Every outcome — commit, deploy, closed deal — feeds back as a signal. Over time, your AI knows what works.
+A self-labeling experience engine for AI agents. Define your business process — software dev, sales, support — and outcomes automatically label which memories matter. Over time, your AI knows what works.
 
 ---
 
 ## The Problem
 
-There are three ways people give context to AI coding assistants today.
+There are three ways people give context to AI agents today.
 
 ### 1. Static instructions (CLAUDE.md)
 
@@ -67,51 +67,47 @@ This is Q-learning — the same algorithm that trained AlphaGo. Applied to your 
 
 ---
 
-## Experiences — Different Lenses on the Same Memory
+## Experiences — Your Process, Your Rewards
 
-One memory can be valuable in one context and worthless in another.
-
-An Experience is a definition of what "success" means for a specific workflow. You create it as a simple YAML config.
+One memory can be valuable in one context and worthless in another. An Experience defines what "success" means for a specific workflow — including the process pipeline and which memory types matter.
 
 ### For a developer (default)
 
 ```yaml
+process_stages: [backlog, in_progress, review, merged, deployed]
 weights:
-  commit: 0.3
-  pr: 0.2
-  deploy: 0.1
-  tests: 0.1
+  commit: 0.3, pr: 0.2, deploy: 0.1, tests: 0.1
+reward_memory_types: [decision, insight, outcome, action]
 ```
 
 ### For sales
 
 ```yaml
+process_stages: [lead, contacted, qualified, proposal, negotiation, won]
 weights:
-  email_sent: 0.15
-  proposal_sent: 0.20
-  payment_received: 0.30
-  commit: 0.0
+  email_sent: 0.15, proposal_sent: 0.20, payment_received: 0.30
+reward_memory_types: [decision, insight, outcome]  # skip raw actions
 ```
 
 ### For support
 
 ```yaml
+process_stages: [new_ticket, investigating, responded, resolved, closed]
 weights:
-  ticket_closed: 0.25
-  escalation_avoided: 0.20
-  customer_reply: 0.10
+  ticket_closed: 0.25, email_sent: 0.10
+reward_memory_types: [decision, insight, outcome]
 ```
 
 ### For content creation
 
 ```yaml
+process_stages: [idea, draft, review, published, distributed]
 weights:
-  post_published: 0.25
-  engagement: 0.15
-  subscriber_gained: 0.20
+  writes: 0.05, deploy: 0.20, decisions: 0.15
+reward_memory_types: [decision, insight, outcome]
 ```
 
-**Each memory holds separate scores per experience.** In a sales context, sales-relevant memories surface. In a coding context — coding memories.
+**Each memory holds separate scores per experience.** In a sales context, sales-relevant memories surface. In a coding context — coding memories. Memory type filtering ensures only meaningful memories (decisions, insights) accumulate rewards — raw tool observations stay at baseline.
 
 ### Example
 

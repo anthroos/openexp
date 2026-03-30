@@ -53,6 +53,10 @@ def ingest_session(
     from .observation import ingest_observations
     from .session_summary import ingest_sessions
     from .reward import compute_session_reward, reward_retrieved_memories, _build_session_reward_context
+    from ..core.experience import get_active_experience
+
+    # Load active experience so weights/config are used throughout
+    experience = get_active_experience()
 
     result = {}
 
@@ -81,22 +85,27 @@ def ingest_session(
         session_obs = raw_obs
 
     if session_id and session_obs:
-        reward = compute_session_reward(session_obs)
+        # BUG FIX: pass experience weights instead of hardcoded defaults
+        reward = compute_session_reward(session_obs, weights=experience.session_reward_weights)
         if reward != 0.0:
             reward_ctx = _build_session_reward_context(session_obs, reward)
             # Reward only memories that were RECALLED at session start (closed loop)
             retrieved_updated = reward_retrieved_memories(
-                session_id, reward, reward_context=reward_ctx,
+                session_id, reward,
+                experience=experience.name,
+                reward_context=reward_ctx,
+                reward_memory_types=experience.reward_memory_types,
             )
             result["reward"] = {
                 "applied": True,
                 "value": reward,
                 "retrieved_memories_rewarded": retrieved_updated,
                 "session_observations": len(session_obs),
+                "experience": experience.name,
             }
             logger.info(
-                "Session reward=%.2f applied to %d retrieved memories (from %d session obs)",
-                reward, retrieved_updated, len(session_obs),
+                "Session reward=%.2f applied to %d retrieved memories (from %d session obs, experience=%s)",
+                reward, retrieved_updated, len(session_obs), experience.name,
             )
         else:
             result["reward"] = {"applied": False, "value": 0.0, "reason": "neutral session", "retrieved_memories_rewarded": 0}
@@ -121,6 +130,7 @@ def ingest_session(
                 resolvers=resolvers,
                 q_cache=q_cache,
                 q_updater=q_updater,
+                experience=experience.name,
             )
             result["outcomes"] = outcome_result
 

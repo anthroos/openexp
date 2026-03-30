@@ -319,6 +319,34 @@ def _ask_choice(prompt: str, choices: list[tuple[str, str]], default: int = 1) -
         print(f"  Please enter 1-{len(choices)}.")
 
 
+_PROCESS_PRESETS = {
+    "dev": {
+        "label": "Software Development",
+        "stages": ["backlog", "in_progress", "review", "merged", "deployed"],
+        "stage_rewards": [0.0, 0.05, 0.2, 0.3, 0.4],
+        "signal_defaults": {"commit": 8, "pr": 7, "writes": 5, "tests": 6, "deploy": 6, "decisions": 5},
+    },
+    "sales": {
+        "label": "Sales & Outreach",
+        "stages": ["lead", "contacted", "qualified", "proposal", "negotiation", "won"],
+        "stage_rewards": [0.0, 0.1, 0.2, 0.3, 0.4, 0.8],
+        "signal_defaults": {"decisions": 8, "email_sent": 7, "follow_up": 6, "proposal_sent": 8, "payment_received": 10},
+    },
+    "support": {
+        "label": "Customer Support",
+        "stages": ["new_ticket", "investigating", "responded", "resolved", "closed"],
+        "stage_rewards": [0.0, 0.05, 0.15, 0.3, 0.4],
+        "signal_defaults": {"decisions": 6, "email_sent": 7, "ticket_closed": 9, "writes": 3},
+    },
+    "content": {
+        "label": "Content Creation",
+        "stages": ["idea", "draft", "review", "published", "distributed"],
+        "stage_rewards": [0.0, 0.1, 0.2, 0.35, 0.4],
+        "signal_defaults": {"writes": 7, "commit": 5, "deploy": 8, "decisions": 6, "email_sent": 4},
+    },
+}
+
+
 def _experience_create_wizard():
     """Interactive wizard to create a custom experience YAML."""
     import yaml
@@ -328,17 +356,67 @@ def _experience_create_wizard():
     print("  OpenExp — Create Custom Experience")
     print("=" * 50)
 
+    # Process type (new — asked first)
+    process_idx = _ask_choice(
+        "What kind of process does this experience track?",
+        [
+            ("Software Dev", "commits, PRs, deploys"),
+            ("Sales", "leads, proposals, payments"),
+            ("Support", "tickets, responses, resolutions"),
+            ("Content", "drafts, publishing, distribution"),
+        ],
+        default=1,
+    )
+    process_keys = ["dev", "sales", "support", "content"]
+    preset_key = process_keys[process_idx]
+    preset = _PROCESS_PRESETS[preset_key]
+
+    print(f"\n  Using '{preset['label']}' preset as starting point.")
+    print(f"  Pipeline stages: {' -> '.join(preset['stages'])}")
+
+    # Ask if custom stages
+    custom_stages_idx = _ask_choice(
+        "Use these pipeline stages?",
+        [
+            ("Yes", f"use preset stages: {', '.join(preset['stages'])}"),
+            ("Custom", "enter your own stages (comma-separated)"),
+        ],
+        default=1,
+    )
+
+    if custom_stages_idx == 0:
+        stage_names = preset["stages"]
+        stage_rewards = preset["stage_rewards"]
+    else:
+        raw = input("Enter stages (comma-separated, in order): ").strip()
+        stage_names = [s.strip().replace(" ", "_") for s in raw.split(",") if s.strip()]
+        if not stage_names:
+            stage_names = preset["stages"]
+            print(f"  No stages entered, using preset: {', '.join(stage_names)}")
+        # Auto-assign rewards linearly
+        n = len(stage_names)
+        stage_rewards = [round(i * 0.8 / max(n - 1, 1), 2) for i in range(n)]
+        print(f"  Auto-assigned rewards: {dict(zip(stage_names, stage_rewards))}")
+
+    process_stages = [
+        {"name": name, "reward_on_enter": rwd}
+        for name, rwd in zip(stage_names, stage_rewards)
+    ]
+
     # Name
+    default_name = preset_key
     while True:
-        name = input("\nExperience name (lowercase, no spaces): ").strip().lower().replace(" ", "-")
-        if name and name.isidentifier() or all(c.isalnum() or c == "-" for c in name):
+        name = input(f"\nExperience name (lowercase, no spaces) [{default_name}]: ").strip().lower().replace(" ", "-")
+        if not name:
+            name = default_name
+        if name and (name.isidentifier() or all(c.isalnum() or c == "-" for c in name)):
             break
         print("  Use only letters, numbers, and hyphens.")
 
     # Description
-    desc = input("One-line description: ").strip() or f"{name} experience"
+    desc = input(f"One-line description [{preset['label']} experience]: ").strip() or f"{preset['label']} experience"
 
-    # Signal ratings
+    # Signal ratings (with preset defaults)
     signals = [
         ("commit", "Committed code to git"),
         ("pr", "Created a Pull Request"),
@@ -361,13 +439,15 @@ def _experience_create_wizard():
         ("payment_received", "Payment received"),
     ]
 
+    defaults = preset.get("signal_defaults", {})
     print("\n--- Rate each signal 0-10 (how important for YOUR workflow) ---")
     print("  10 = this IS the goal   5 = moderate   0 = irrelevant")
-    print()
+    print(f"  Preset defaults shown in brackets.\n")
 
     weights = {}
     for key, label in signals:
-        rating = _ask_int(f"  {label}", 0, 10, default=0)
+        default_val = defaults.get(key, 0)
+        rating = _ask_int(f"  {label}", 0, 10, default=default_val)
         w = _rating_to_weight(rating)
         if key == "writes":
             w = round(w / 5, 3)  # per-file weight, cap at ~0.06/file
@@ -394,14 +474,31 @@ def _experience_create_wizard():
     alpha_idx = _ask_choice(
         "How fast does your domain change?",
         [
-            ("Fast", "sales, news — learn fast, forget fast (α=0.30)"),
-            ("Normal", "engineering — balanced (α=0.25)"),
-            ("Slow", "research, legal — accumulate gradually (α=0.15)"),
+            ("Fast", "sales, news — learn fast, forget fast (alpha=0.30)"),
+            ("Normal", "engineering — balanced (alpha=0.25)"),
+            ("Slow", "research, legal — accumulate gradually (alpha=0.15)"),
         ],
         default=2,
     )
     alpha_values = [0.30, 0.25, 0.15]
     alpha = alpha_values[alpha_idx]
+
+    # Memory type filter (new)
+    mem_filter_idx = _ask_choice(
+        "Which memory types should receive session rewards?",
+        [
+            ("All types", "reward every recalled memory (default for dev)"),
+            ("Decisions+Insights+Outcomes", "skip raw action/observation memories"),
+            ("Only decisions", "most selective — only strategic choices get rewarded"),
+        ],
+        default=1 if preset_key == "dev" else 2,
+    )
+    reward_memory_types_options = [
+        [],  # empty = all
+        ["decision", "insight", "outcome"],
+        ["decision"],
+    ]
+    reward_memory_types = reward_memory_types_options[mem_filter_idx]
 
     # Retrieval boosts
     print("\n--- Which memory types should rank higher in search? ---")
@@ -415,9 +512,9 @@ def _experience_create_wizard():
         boost_idx = _ask_choice(
             f"Boost for '{mem_type}' ({label})?",
             [
-                ("None", "no boost (1.0×)"),
-                ("Mild", "slight boost (1.1×)"),
-                ("Strong", "significant boost (1.3×)"),
+                ("None", "no boost (1.0x)"),
+                ("Mild", "slight boost (1.1x)"),
+                ("Strong", "significant boost (1.3x)"),
             ],
             default=1,
         )
@@ -444,19 +541,27 @@ def _experience_create_wizard():
         "outcome_resolvers": resolvers,
         "retrieval_boosts": boosts if boosts else {},
         "q_config_overrides": {"alpha": alpha} if alpha != 0.25 else {},
+        "process_stages": process_stages,
     }
+    if reward_memory_types:
+        experience["reward_memory_types"] = reward_memory_types
 
     # Summary
     total_positive = sum(v for v in weights.values() if v > 0)
     print("\n" + "=" * 50)
     print(f"  Experience: {name}")
     print(f"  Description: {desc}")
+    print(f"  Process: {' -> '.join(stage_names)}")
     print(f"  Total positive weight: {total_positive:.2f}")
     if total_positive < 0.5:
-        print("  ⚠ Low total — sessions may rarely earn positive reward")
+        print("  Warning: Low total — sessions may rarely earn positive reward")
     elif total_positive > 1.5:
-        print("  ⚠ High total — most sessions will max out reward")
+        print("  Warning: High total — most sessions will max out reward")
     print(f"  Alpha: {alpha}")
+    if reward_memory_types:
+        print(f"  Reward memory types: {', '.join(reward_memory_types)}")
+    else:
+        print(f"  Reward memory types: all")
     print("=" * 50)
 
     yaml_text = yaml.dump(experience, default_flow_style=False, sort_keys=False)
@@ -529,6 +634,11 @@ def cmd_experience(args):
             "outcome_resolvers": exp.outcome_resolvers,
             "retrieval_boosts": exp.retrieval_boosts,
             "q_config_overrides": exp.q_config_overrides,
+            "process_stages": [
+                {"name": s.name, "description": s.description, "reward_on_enter": s.reward_on_enter}
+                for s in exp.process_stages
+            ],
+            "reward_memory_types": exp.reward_memory_types,
         }
         print(json.dumps(info, indent=2))
 

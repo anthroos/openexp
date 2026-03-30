@@ -1,5 +1,5 @@
 name: default
-description: General-purpose experience with balanced weights
+description: General-purpose software engineering experience with balanced weights
 session_reward_weights:
   commit: 0.3
   pr: 0.2
@@ -13,3 +13,27 @@ session_reward_weights:
 outcome_resolvers: []
 retrieval_boosts: {}
 q_config_overrides: {}
+
+process_stages:
+  - name: backlog
+    description: Task identified but not started
+    reward_on_enter: 0.0
+  - name: in_progress
+    description: Actively working on task
+    reward_on_enter: 0.05
+  - name: review
+    description: Code submitted for review (PR created)
+    reward_on_enter: 0.2
+  - name: merged
+    description: Code merged to main branch
+    reward_on_enter: 0.3
+  - name: deployed
+    description: Live in production
+    reward_on_enter: 0.4
+
+# Dev process rewards actions/decisions/insights/outcomes
+reward_memory_types:
+  - decision
+  - insight
+  - outcome
+  - action
