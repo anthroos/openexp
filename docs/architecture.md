@@ -1,5 +1,8 @@
 # Architecture
 
+> **Full storage system docs:** See [storage-system.md](storage-system.md) for the complete
+> 5-level pyramid (L0–L4), all 4 reward paths, Q-learning formulas, MCP tools, and file map.
+
 ## System Overview
 
 ```

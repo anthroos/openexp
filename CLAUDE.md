@@ -24,13 +24,17 @@ Immediately. Don't wait. Every piece of context improves future retrieval.
 
 ## Architecture
 
-- `openexp/core/` — Q-learning engine (q_value, search, scoring, lifecycle)
-- `openexp/ingest/` — Observation → Qdrant pipeline
-- `openexp/resolvers/` — Outcome resolvers (CRM → rewards)
-- `openexp/hooks/` — Claude Code integration (session-start, post-tool-use, session-end)
-- `openexp/mcp_server.py` — MCP STDIO server
+**Full reference:** `docs/storage-system.md` — 5-level pyramid (L0–L4), all 4 reward paths, Q-learning formulas, 16 MCP tools, every file and env var. **Read that instead of re-reading source code.**
+
+- `openexp/core/` — Q-learning engine (q_value, search, scoring, lifecycle, explanation, reward_log)
+- `openexp/ingest/` — Observation → Qdrant pipeline + session reward (Path 1)
+- `openexp/reward_tracker.py` — Prediction → outcome rewards (Path 2)
+- `openexp/outcome.py` — Business event rewards (Path 3)
+- `openexp/resolvers/` — Outcome resolvers (CRM CSV → rewards)
+- `openexp/mcp_server.py` — MCP STDIO server (16 tools) + calibration rewards (Path 4)
 - `openexp/cli.py` — CLI interface
-- `tests/` — pytest suite
+- `openexp/viz.py` — Visualization data export
+- `tests/` — 237 tests across 11 files
 
 ## Q-Learning (do not change without discussion)
 
