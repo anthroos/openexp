@@ -11,6 +11,7 @@ Search order for loading:
 """
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -76,6 +77,14 @@ def _parse_yaml(path: Path) -> Experience:
     )
 
 
+_VALID_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _validate_experience_name(name: str) -> bool:
+    """Validate experience name to prevent path traversal."""
+    return bool(_VALID_NAME_RE.match(name)) and len(name) <= 64
+
+
 def load_experience(name: str) -> Experience:
     """Load an experience by name.
 
@@ -84,6 +93,10 @@ def load_experience(name: str) -> Experience:
       2. openexp/data/experiences/{name}.yaml
       3. DEFAULT_EXPERIENCE (if name == "default")
     """
+    if not _validate_experience_name(name):
+        logger.warning("Invalid experience name '%s', falling back to default", name)
+        return DEFAULT_EXPERIENCE
+
     if name == "default":
         # Try YAML files first, fall back to constant
         for directory in (_user_experiences_dir(), _BUNDLED_DIR):

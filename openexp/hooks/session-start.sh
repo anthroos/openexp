@@ -50,7 +50,11 @@ export OPENEXP_TMPDIR="$TMPDIR_HOOK"
 # Resolve experience: project .openexp.yaml → env var → default
 EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
 if [ -f "$CWD/.openexp.yaml" ]; then
-  PROJECT_EXP=$(python3 -c "import yaml; d=yaml.safe_load(open('$CWD/.openexp.yaml')); print(d.get('experience',''))" 2>/dev/null)
+  PROJECT_EXP=$(OPENEXP_CWD="$CWD" python3 -c "
+import yaml, os
+d=yaml.safe_load(open(os.path.join(os.environ['OPENEXP_CWD'], '.openexp.yaml')))
+print(d.get('experience',''))
+" 2>/dev/null)
   [ -n "$PROJECT_EXP" ] && EXPERIENCE="$PROJECT_EXP"
 fi
 "$PYTHON" -c "
