@@ -36,6 +36,7 @@ def log_reward_event(
     memory_ids: List[str],
     context: Dict[str, Any],
     experience: str = "default",
+    explanation: Optional[str] = None,
 ) -> None:
     """Append full reward event to cold storage JSONL.
 
@@ -46,6 +47,7 @@ def log_reward_event(
         memory_ids: Memory IDs that received this reward
         context: Full context dict (no size limit)
         experience: Experience name
+        explanation: L4 LLM-generated explanation (optional)
     """
     record = {
         "reward_id": reward_id,
@@ -56,6 +58,8 @@ def log_reward_event(
         "experience": experience,
         "context": context,
     }
+    if explanation is not None:
+        record["explanation"] = explanation
 
     try:
         REWARD_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .core.explanation import generate_reward_explanation, _fetch_memory_contents
 from .core.q_value import QValueUpdater, QCache, compute_layer_rewards
 from .core.reward_log import generate_reward_id, log_reward_event
 
@@ -176,23 +177,22 @@ class RewardTracker:
 
         # L3 cold storage
         rwd_id = generate_reward_id()
-        log_reward_event(
-            reward_id=rwd_id,
-            reward_type="prediction",
-            reward=reward,
-            memory_ids=memory_ids,
-            context={
-                "prediction_id": prediction_id,
-                "prediction": pred.get("prediction", ""),
-                "outcome": outcome,
-                "confidence": pred.get("confidence"),
-                "strategic_value": pred.get("strategic_value"),
-                "cause_category": cause_category,
-                "source": source,
-                "client_id": pred.get("client_id"),
-            },
-            experience=self.experience,
-        )
+        cold_context = {
+            "prediction_id": prediction_id,
+            "prediction": pred.get("prediction", ""),
+            "outcome": outcome,
+            "confidence": pred.get("confidence"),
+            "strategic_value": pred.get("strategic_value"),
+            "cause_category": cause_category,
+            "source": source,
+            "client_id": pred.get("client_id"),
+        }
+
+        # L4: read first memory's Q before update
+        q_before = None
+        if memory_ids:
+            first_q_data = self.q_cache.get(memory_ids[0], self.experience)
+            q_before = first_q_data.get("q_value", 0.0) if first_q_data else None
 
         updated_q = {}
         layer_rewards = compute_layer_rewards(reward)
@@ -201,6 +201,33 @@ class RewardTracker:
                 mem_id, layer_rewards, experience=self.experience,
                 reward_context=reward_ctx, reward_id=rwd_id,
             )
+
+        # L4: read first memory's Q after update
+        q_after = None
+        if memory_ids:
+            first_q_after = self.q_cache.get(memory_ids[0], self.experience)
+            q_after = first_q_after.get("q_value", 0.0) if first_q_after else None
+
+        # L4: generate explanation with q_before/q_after
+        explanation = generate_reward_explanation(
+            reward_type="prediction",
+            reward=reward,
+            context=cold_context,
+            memory_contents=_fetch_memory_contents(memory_ids[:5]),
+            q_before=q_before,
+            q_after=q_after,
+            experience=self.experience,
+        )
+
+        log_reward_event(
+            reward_id=rwd_id,
+            reward_type="prediction",
+            reward=reward,
+            memory_ids=memory_ids,
+            context=cold_context,
+            experience=self.experience,
+            explanation=explanation,
+        )
 
         logger.info(
             "Outcome for %s: reward=%.2f, updated %d memories (reward_id=%s)",

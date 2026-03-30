@@ -15,6 +15,7 @@ from qdrant_client.models import Filter, FieldCondition, MatchValue
 
 from .core.config import COLLECTION_NAME
 from .core.direct_search import _get_qdrant
+from .core.explanation import generate_reward_explanation, _fetch_memory_contents
 from .core.q_value import QCache, QValueUpdater, compute_layer_rewards
 from .core.reward_log import generate_reward_id, log_reward_event
 
@@ -175,19 +176,18 @@ def resolve_outcomes(
 
             # L3 cold storage
             rwd_id = generate_reward_id()
-            log_reward_event(
-                reward_id=rwd_id,
-                reward_type="business",
-                reward=event.reward,
-                memory_ids=memory_ids,
-                context={
-                    "entity_id": event.entity_id,
-                    "event_name": event.event_name,
-                    "details": event.details,
-                    "resolver": resolver_name,
-                },
-                experience=experience,
-            )
+            cold_context = {
+                "entity_id": event.entity_id,
+                "event_name": event.event_name,
+                "details": event.details,
+                "resolver": resolver_name,
+            }
+
+            # L4: read first memory's Q before update
+            q_before = None
+            first_q_data = q_updater.cache.get(memory_ids[0], experience)
+            if first_q_data:
+                q_before = first_q_data.get("q_value", 0.0)
 
             layer_rewards = compute_layer_rewards(event.reward)
             for mem_id in memory_ids:
@@ -195,6 +195,33 @@ def resolve_outcomes(
                     mem_id, layer_rewards, experience=experience,
                     reward_context=reward_ctx, reward_id=rwd_id,
                 )
+
+            # L4: read first memory's Q after update
+            q_after = None
+            first_q_after = q_updater.cache.get(memory_ids[0], experience)
+            if first_q_after:
+                q_after = first_q_after.get("q_value", 0.0)
+
+            # L4: generate explanation with q_before/q_after
+            explanation = generate_reward_explanation(
+                reward_type="business",
+                reward=event.reward,
+                context=cold_context,
+                memory_contents=_fetch_memory_contents(memory_ids[:5]),
+                q_before=q_before,
+                q_after=q_after,
+                experience=experience,
+            )
+
+            log_reward_event(
+                reward_id=rwd_id,
+                reward_type="business",
+                reward=event.reward,
+                memory_ids=memory_ids,
+                context=cold_context,
+                experience=experience,
+                explanation=explanation,
+            )
             total_memories_rewarded += len(memory_ids)
             logger.info(
                 "Event %s for %s: rewarded %d memories (reward=%.2f, reward_id=%s)",
