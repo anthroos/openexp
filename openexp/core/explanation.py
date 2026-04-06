@@ -59,9 +59,9 @@ def generate_reward_explanation(
 
     try:
         global _anthropic_client
-        import anthropic
 
         if _anthropic_client is None:
+            import anthropic
             _anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
         response = _anthropic_client.messages.create(
