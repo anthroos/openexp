@@ -62,7 +62,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Write observation to JSONL
 OBS_FILE="$OBS_DIR/observations-$(date +%Y-%m-%d).jsonl"
-jq -n \
+jq -cn \
   --arg id "$OBS_ID" \
   --arg timestamp "$TIMESTAMP" \
   --arg session_id "$SESSION_ID" \

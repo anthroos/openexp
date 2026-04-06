@@ -27,6 +27,14 @@ def cleanup_test_memories():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_reward_log(tmp_path):
+    """Prevent tests from polluting the real reward_log.jsonl."""
+    log_path = tmp_path / "reward_log.jsonl"
+    with patch("openexp.core.reward_log.REWARD_LOG_PATH", log_path):
+        yield
+
+
 class TestOutcomeEvent:
     def test_basic_construction(self):
         event = OutcomeEvent(
@@ -299,7 +307,7 @@ class TestResolveOutcomes:
 
         mock_tracker = MagicMock()
         mock_tracker.get_pending_predictions.return_value = [
-            {"id": "pred_abc123", "client_id": "comp-test", "prediction": "SQUAD will close"}
+            {"id": "pred_abc123", "client_id": "comp-test", "prediction": "Deal will close"}
         ]
         mock_tracker.log_outcome.return_value = {"prediction_id": "pred_abc123", "reward": 0.8}
 

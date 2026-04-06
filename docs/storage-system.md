@@ -3,7 +3,7 @@
 > **Purpose:** This document describes the full storage architecture so that Claude
 > doesn't have to re-read every source file each session. Read THIS instead of the code.
 >
-> **Last updated:** 2026-03-26 (after L4 audit, all gaps fixed, 237 tests pass)
+> **Last updated:** 2026-04-05 (experience routing fix, 250 tests pass)
 
 ---
 
@@ -314,7 +314,7 @@ Same memory can have different Q-values per experience (e.g., "default", "sales"
                 ↓
         filters.py  (drops ~60-70% trivial obs)
                 ↓
-        observation.py  (batch embed via FastEmbed → upsert to Qdrant)
+        observation.py  (batch embed via FastEmbed → upsert to Qdrant, experience-aware Q init)
                 ↓
 ~/.openexp/sessions/*.md   (written by session-end hook)
                 ↓
@@ -323,7 +323,15 @@ Same memory can have different Q-values per experience (e.g., "default", "sales"
         reward.py  (compute session reward → update Q-values)
                 ↓
         watermark.py  (mark processed obs IDs for idempotency)
+                ↓
+~/.claude/projects/*/*.jsonl   (Claude Code transcripts)
+                ↓
+        extract_decisions.py  (Opus 4.6 via claude -p → decisions/insights → Qdrant)
 ```
+
+### Decision Extraction (`ingest/extract_decisions.py`)
+
+Runs as Phase 2c of SessionEnd (after ingest + reward). Uses Opus 4.6 to extract strategic decisions, insights, and commitments from the conversation transcript. See [Decision Extraction](decision-extraction.md) for details.
 
 ### Filters (`ingest/filters.py`)
 
@@ -339,7 +347,7 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | **SessionStart** | `session-start.sh` | Session begins | Search Qdrant → inject top-5 memories → log retrieval IDs |
 | **UserPromptSubmit** | `user-prompt-recall.sh` | Each message | Context recall (skip trivial) → inject |
 | **PostToolUse** | `post-tool-use.sh` | After Write/Edit/Bash | Write observation to JSONL (skip reads) |
-| **SessionEnd** | `session-end.sh` | Session ends | Generate summary → async ingest → compute reward |
+| **SessionEnd** | `session-end.sh` | Session ends | Generate summary → async ingest → reward → decision extraction |
 
 ---
 
@@ -372,11 +380,12 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | File | Purpose |
 |------|---------|
 | `ingest/filters.py` | Drop trivial observations |
-| `ingest/observation.py` | Batch embed → Qdrant upsert |
+| `ingest/observation.py` | Batch embed → Qdrant upsert (passes `experience` to Q-cache init) |
 | `ingest/session_summary.py` | Parse session markdown → memories |
 | `ingest/reward.py` | Session reward computation + Q-update + L3/L4 |
 | `ingest/retrieval_log.py` | Track recalled memory IDs |
 | `ingest/watermark.py` | Idempotent ingestion tracking |
+| `ingest/extract_decisions.py` | Opus 4.6 decision extraction from transcripts |
 
 ### Reward Paths
 
@@ -437,12 +446,15 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | `QDRANT_PORT` | `6333` | Qdrant port |
 | `QDRANT_API_KEY` | `""` | Qdrant auth (optional) |
 | `ANTHROPIC_API_KEY` | `""` | For enrichment + explanations |
+| `OPENEXP_EXTRACT_MODEL` | `claude-opus-4-6` | Decision extraction model |
+| `OPENEXP_EXTRACT_MAX_TOKENS` | `2048` | Max tokens for extraction |
+| `OPENEXP_EXTRACT_CONTEXT_LIMIT` | `30000` | Max transcript chars sent to LLM |
 
 ---
 
 ## 14. Test Coverage
 
-237 tests across 11 test files. Key test files for the storage system:
+250 tests across 11 test files. Key test files for the storage system:
 
 | File | Tests | What |
 |------|-------|------|
