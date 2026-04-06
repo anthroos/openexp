@@ -135,9 +135,20 @@ fi
   cd "$OPENEXP_DIR"
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: starting ingest for session $SESSION_SHORT" >> "$INGEST_LOG"
 
-  # Resolve experience: project .openexp.yaml → env var → default
+  # Resolve experience: auto-detected (from prompts) → project .openexp.yaml → env var → default
   EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
-  if [ -n "$CWD" ] && [ -f "$CWD/.openexp.yaml" ]; then
+  # Check if experience was auto-detected during this session
+  AUTO_EXP=$("$PYTHON" -c "
+import sys
+sys.path.insert(0, '.')
+from openexp.core.experience import get_session_experience
+exp = get_session_experience('$SESSION_ID')
+print(exp or '')
+" 2>/dev/null)
+  if [ -n "$AUTO_EXP" ]; then
+    EXPERIENCE="$AUTO_EXP"
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: using auto-detected experience '$EXPERIENCE'" >> "$INGEST_LOG"
+  elif [ -n "$CWD" ] && [ -f "$CWD/.openexp.yaml" ]; then
     PROJECT_EXP=$(OPENEXP_CWD="$CWD" python3 -c "
 import yaml, os
 d=yaml.safe_load(open(os.path.join(os.environ['OPENEXP_CWD'], '.openexp.yaml')))
@@ -146,10 +157,83 @@ print(d.get('experience',''))
     [ -n "$PROJECT_EXP" ] && EXPERIENCE="$PROJECT_EXP"
   fi
   export OPENEXP_EXPERIENCE="$EXPERIENCE"
+  # Phase 2a: Full ingest + session reward (ingests ALL pending obs, rewards THIS session)
   "$PYTHON" -m openexp.cli ingest --session-id "$SESSION_ID" >> "$INGEST_LOG" 2>&1
   EXIT_CODE=$?
-
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: ingest finished (exit=$EXIT_CODE)" >> "$INGEST_LOG"
+
+  # Phase 2b: Fallback reward — if obs were already ingested (by launchd or prior session),
+  # raw_obs was empty and reward didn't fire above. Read obs from JSONL directly.
+  # Guard: skip if reward was already applied for this session (idempotency).
+  "$PYTHON" -c "
+import json, sys, logging
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+session_id = '$SESSION_ID'
+data_dir = Path.home() / '.openexp' / 'data'
+reward_log = data_dir / 'reward_log.jsonl'
+
+# Check if reward already applied for this session
+if reward_log.exists():
+    for line in reward_log.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ctx = entry.get('context', {})
+        if isinstance(ctx, dict) and session_id in ctx.get('session_id', ''):
+            print(f'Reward already applied for session {session_id[:8]}, skipping fallback')
+            sys.exit(0)
+
+# No reward yet — read observations from JSONL and compute
+from openexp.ingest.reward import compute_session_reward, reward_retrieved_memories, _build_session_reward_context
+from openexp.core.experience import get_active_experience
+
+obs_dir = Path.home() / '.openexp' / 'observations'
+session_obs = []
+for f in sorted(obs_dir.glob('observations-*.jsonl')):
+    for line in f.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            obs = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        sid = obs.get('session_id', '')
+        if session_id in sid or sid.startswith(session_id[:8]):
+            session_obs.append(obs)
+
+if not session_obs:
+    print(f'No observations found for session {session_id[:8]}')
+    sys.exit(0)
+
+experience = get_active_experience()
+reward = compute_session_reward(session_obs, weights=experience.session_reward_weights)
+if reward == 0.0:
+    print(f'Session {session_id[:8]}: neutral reward, skipping')
+    sys.exit(0)
+
+reward_ctx = _build_session_reward_context(session_obs, reward)
+updated = reward_retrieved_memories(
+    session_id, reward,
+    experience=experience.name,
+    reward_context=reward_ctx,
+    reward_memory_types=experience.reward_memory_types,
+)
+print(f'Fallback reward={reward:.2f} applied to {updated} retrieved memories ({len(session_obs)} obs)')
+" >> "$INGEST_LOG" 2>&1
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: fallback reward finished" >> "$INGEST_LOG"
+
+  # Cleanup session experience file
+  "$PYTHON" -c "
+import sys
+sys.path.insert(0, '.')
+from openexp.core.experience import cleanup_session_experience
+cleanup_session_experience('$SESSION_ID')
+" 2>/dev/null
 ) &
 disown
 

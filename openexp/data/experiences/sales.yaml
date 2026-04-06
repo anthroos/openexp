@@ -43,3 +43,32 @@ reward_memory_types:
   - decision
   - insight
   - outcome
+
+# Keywords for auto-detection from prompt text (EN + UK)
+detect_keywords:
+  - client
+  - deal
+  - lead
+  - proposal
+  - outreach
+  - follow-up
+  - follow up
+  - email
+  - crm
+  - pipeline
+  - sales
+  - prospect
+  - revenue
+  - close
+  - contract
+  - клієнт
+  - угода
+  - лід
+  - пропозиц
+  - аутріч
+  - фоловап
+  - імейл
+  - продаж
+  - контракт
+  - листа
+  - написати лист
