@@ -3,7 +3,7 @@
 > **Purpose:** This document describes the full storage architecture so that Claude
 > doesn't have to re-read every source file each session. Read THIS instead of the code.
 >
-> **Last updated:** 2026-03-26 (after L4 audit, all gaps fixed, 237 tests pass)
+> **Last updated:** 2026-04-05 (experience routing fix, 250 tests pass)
 
 ---
 
@@ -314,7 +314,7 @@ Same memory can have different Q-values per experience (e.g., "default", "sales"
                 ↓
         filters.py  (drops ~60-70% trivial obs)
                 ↓
-        observation.py  (batch embed via FastEmbed → upsert to Qdrant)
+        observation.py  (batch embed via FastEmbed → upsert to Qdrant, experience-aware Q init)
                 ↓
 ~/.openexp/sessions/*.md   (written by session-end hook)
                 ↓
@@ -372,7 +372,7 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | File | Purpose |
 |------|---------|
 | `ingest/filters.py` | Drop trivial observations |
-| `ingest/observation.py` | Batch embed → Qdrant upsert |
+| `ingest/observation.py` | Batch embed → Qdrant upsert (passes `experience` to Q-cache init) |
 | `ingest/session_summary.py` | Parse session markdown → memories |
 | `ingest/reward.py` | Session reward computation + Q-update + L3/L4 |
 | `ingest/retrieval_log.py` | Track recalled memory IDs |
@@ -442,7 +442,7 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 
 ## 14. Test Coverage
 
-237 tests across 11 test files. Key test files for the storage system:
+250 tests across 11 test files. Key test files for the storage system:
 
 | File | Tests | What |
 |------|-------|------|

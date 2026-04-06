@@ -196,6 +196,7 @@ def ingest_observations(
     max_count: int = 0,
     dry_run: bool = False,
     obs_dir: Optional[Path] = None,
+    experience: str = "default",
 ) -> Dict:
     """Ingest observations into Qdrant."""
     obs_dir = obs_dir or OBSERVATIONS_DIR
@@ -279,7 +280,7 @@ def ingest_observations(
                 "q_hypothesis": q_init,
                 "q_fit": q_init,
                 "q_visits": 0,
-            })
+            }, experience=experience)
 
             ingested_point_ids.append(point_id)
             watermark.mark_obs_processed(obs.get("id", ""))
