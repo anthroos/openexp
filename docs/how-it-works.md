@@ -50,7 +50,19 @@ When the session ends, the SessionEnd hook:
 2. Saves it to `~/.openexp/sessions/`
 3. Triggers async ingest + reward computation (runs in background so it doesn't block exit)
 
-### 4. Q-Learning Reward Loop
+### 4. Decision Extraction (SessionEnd Phase 2c)
+
+After ingest and reward, Opus 4.6 reads the full conversation transcript and extracts:
+
+- **Decisions** — "Chose to remove advertising from scope because we're not a marketing agency"
+- **Insights** — "All won clients came through referrals — zero presence on freelance platforms"
+- **Commitments** — "Finalize proposal and send by tomorrow"
+
+This is the critical difference between recording "Edited proposal.html" (action) and recording "Chose to lead with social proof because enterprise clients trust references" (decision with reasoning). Decisions have strategic value; actions don't.
+
+See [Decision Extraction](decision-extraction.md) for full details.
+
+### 5. Q-Learning Reward Loop
 
 This is the core innovation. After each session:
 
@@ -64,6 +76,26 @@ Q_new = (1 - 0.25) × Q_old + 0.25 × reward
 ```
 
 Over time, this creates a natural ranking where useful memories (project conventions, working solutions, important decisions) rise to the top, while noise (trivial commands, one-off fixes) sinks.
+
+## The 4-Phase Learning Cycle
+
+OpenExp learns in four phases, each building on the previous:
+
+**Phase 1 — Store.** Agent works, system writes every action, decision, and context to the vector database. Hooks handle this automatically. Retrieval at this stage = basic vector search.
+
+**Phase 2 — Auto-reward.** After each session, the system evaluates productivity (commits, PRs, deploys, emails sent). Memories from productive sessions get higher Q-values. Noise starts sinking.
+
+**Phase 3 — Decision extraction.** Opus 4.6 reads the conversation transcript and extracts strategic decisions, insights, and commitments. These become first-class memories — the kind of context that changes how you approach the next similar situation.
+
+**Phase 4 — Human calibration.** After a significant outcome (deal closed, project shipped), the user reviews related memories and calibrates Q-values. "This memory directly contributed to closing the deal" → Q goes up. "This was irrelevant noise" → Q goes down.
+
+### What you see over time
+
+| Time | What happens |
+|------|-------------|
+| **Week 1** | System stores everything. Retrieval = vector search. |
+| **Month 1** | Auto-rewards separate productive from empty sessions. Decision extraction adds strategic memories. |
+| **Month 3** | Retrieval is fundamentally different from plain search. Proven decisions surface first. Noise is gone. |
 
 ## Reward Signals
 

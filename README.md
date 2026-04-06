@@ -145,7 +145,9 @@ Three hooks integrate with Claude Code automatically:
 | **SessionStart** | Session opens | Searches Qdrant for relevant memories, injects top results as context |
 | **UserPromptSubmit** | Every message | Lightweight recall — adds relevant memories to each prompt |
 | **PostToolUse** | After Write/Edit/Bash | Captures what Claude does as observations (JSONL) |
-| **SessionEnd** | Session closes | Generates summary, triggers ingest + reward (async) |
+| **SessionEnd** | Session closes | Summary → ingest → reward → decision extraction (async) |
+
+After each session, Opus 4.6 reads the conversation transcript and extracts **decisions** (not actions) — strategic choices, insights, and commitments that have value for future similar situations. See [Decision Extraction](docs/decision-extraction.md).
 
 The MCP server provides 16 tools for memory operations, introspection, and calibration.
 
@@ -310,7 +312,8 @@ openexp/
 │   ├── reward.py               # Session productivity → reward signal
 │   ├── retrieval_log.py        # Closed-loop: which memories were recalled
 │   ├── watermark.py            # Idempotent ingestion tracking
-│   └── filters.py              # Filter trivial observations
+│   ├── filters.py              # Filter trivial observations
+│   └── extract_decisions.py    # Opus 4.6 decision extraction from transcripts
 │
 ├── resolvers/                  # Outcome resolvers (pluggable)
 │   └── crm_csv.py              # CRM CSV stage transition → reward events
@@ -435,8 +438,9 @@ See the [Experiences Guide](docs/experiences.md) for full details.
 
 Detailed docs are available in the [`docs/`](docs/) directory:
 
-- [How It Works](docs/how-it-works.md) — full explanation of the learning loop
-- [Storage System](docs/storage-system.md) — 5-level pyramid (L0–L4), all 4 reward paths
+- [How It Works](docs/how-it-works.md) — the 4-phase learning cycle
+- [Decision Extraction](docs/decision-extraction.md) — Opus 4.6 extracts decisions, not actions
+- [Storage System](docs/storage-system.md) — 5-level pyramid (L0-L4), all 4 reward paths
 - [Experiences](docs/experiences.md) — domain-specific reward profiles (create your own)
 - [Architecture](docs/architecture.md) — system design and data flow
 - [Configuration](docs/configuration.md) — all environment variables and options
