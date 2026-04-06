@@ -27,6 +27,14 @@ def cleanup_test_memories():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_reward_log(tmp_path):
+    """Prevent tests from polluting the real reward_log.jsonl."""
+    log_path = tmp_path / "reward_log.jsonl"
+    with patch("openexp.core.reward_log.REWARD_LOG_PATH", log_path):
+        yield
+
+
 class TestOutcomeEvent:
     def test_basic_construction(self):
         event = OutcomeEvent(
