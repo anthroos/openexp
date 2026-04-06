@@ -260,6 +260,19 @@ TOOLS = [
             "required": ["memory_id"],
         },
     },
+    {
+        "name": "protect_memory",
+        "description": "Protect a memory from Q-value decay. Protected memories never receive negative rewards — their Q-value can only go up. Use for identity, core decisions, safety rules, critical knowledge.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "memory_id": {"type": "string", "description": "Memory ID to protect"},
+                "protect": {"type": "boolean", "default": True, "description": "True to protect, False to unprotect"},
+                "reason": {"type": "string", "description": "Why this memory should be protected"},
+            },
+            "required": ["memory_id"],
+        },
+    },
 ]
 
 
@@ -628,6 +641,7 @@ def handle_request(request: dict) -> dict:
                 result = {
                     "memory_id": mem_id,
                     "experience": exp_name,
+                    "protected": q_data.get("protected", False),
                     "q_value": q_data.get("q_value", 0.0),
                     "q_action": q_data.get("q_action", 0.0),
                     "q_hypothesis": q_data.get("q_hypothesis", 0.0),
@@ -716,6 +730,34 @@ def handle_request(request: dict) -> dict:
                 result["overall_summary"] = overall_summary
 
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
+
+        elif tool_name == "protect_memory":
+            mem_id = args["memory_id"]
+            protect = args.get("protect", True)
+            reason = args.get("reason", "")
+
+            q_data = q_cache.get(mem_id, exp_name)
+            if q_data is None:
+                q_data = {"q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0, "q_value": 0.0, "q_visits": 0}
+
+            q_data["protected"] = protect
+            if reason:
+                from .core.q_value import _append_reward_context
+                action = "Protected" if protect else "Unprotected"
+                _append_reward_context(q_data, f"{action}: {reason}")
+
+            from datetime import datetime, timezone
+            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+            q_cache.set(mem_id, q_data, exp_name)
+
+            result = {
+                "memory_id": mem_id,
+                "experience": exp_name,
+                "protected": protect,
+                "q_value": q_data.get("q_value", 0.0),
+                "status": "protected" if protect else "unprotected",
+            }
+            return {"content": [{"type": "text", "text": json.dumps(result)}]}
 
         raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")
 

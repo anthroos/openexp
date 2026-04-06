@@ -319,6 +319,8 @@ class QValueUpdater:
 
         Formula: Q_new = clamp(Q_old + alpha * reward, q_floor, q_ceiling)
         Each positive reward ADDS to Q-value; each negative SUBTRACTS.
+
+        Protected memories skip negative rewards (Q never decreases).
         """
         alpha = self.cfg["alpha"]
         gamma = self.cfg["gamma"]
@@ -326,6 +328,17 @@ class QValueUpdater:
         q_ceiling = self.cfg.get("q_ceiling", 1.0)
 
         q_data = self.cache.get(memory_id, experience) or self._default_q_data()
+
+        # Protected memories: only accept positive rewards
+        if q_data.get("protected") and reward < 0:
+            q_data["q_visits"] = q_data.get("q_visits", 0) + 1
+            q_data["last_reward"] = float(reward)
+            q_data["last_layer_updated"] = layer
+            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+            _append_reward_context(q_data, f"[protected, skip neg] {reward_context}" if reward_context else "[protected, skip neg]", reward_id)
+            self.cache.set(memory_id, q_data, experience)
+            return q_data
+
         target = float(reward) + gamma * float(next_max_q or 0.0)
 
         layer_key = f"q_{layer}"
@@ -355,9 +368,21 @@ class QValueUpdater:
         reward_context: Optional[str] = None,
         reward_id: Optional[str] = None,
     ) -> Dict[str, float]:
-        """Update multiple Q-layers at once (additive)."""
+        """Update multiple Q-layers at once (additive).
+
+        Protected memories skip negative rewards across all layers.
+        """
         q_data = self.cache.get(memory_id, experience) or self._default_q_data()
         q_ceiling = self.cfg.get("q_ceiling", 1.0)
+
+        # Protected memories: skip if overall reward is negative
+        net_reward = sum(rewards.values())
+        if q_data.get("protected") and net_reward < 0:
+            q_data["q_visits"] = q_data.get("q_visits", 0) + 1
+            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+            _append_reward_context(q_data, f"[protected, skip neg] {reward_context}" if reward_context else "[protected, skip neg]", reward_id)
+            self.cache.set(memory_id, q_data, experience)
+            return q_data
 
         for layer, reward in rewards.items():
             if layer in Q_LAYERS:
