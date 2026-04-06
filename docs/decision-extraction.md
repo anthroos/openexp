@@ -136,13 +136,13 @@ From a real session about a client proposal:
 [
   {
     "type": "decision",
-    "content": "Removed advertising from Modecks scope because we're not a marketing agency — client needs CRM+email+follow-up automation, not Google Ads management",
+    "content": "Removed advertising from project scope because we're not a marketing agency — client needs CRM+email+follow-up automation, not Google Ads management",
     "importance": 0.9,
-    "tags": ["modecks", "scoping", "pricing"]
+    "tags": ["client-project", "scoping", "pricing"]
   },
   {
     "type": "insight",
-    "content": "For small contractors (decks/fencing), semi-automatic approach (Claude Code + one click) is more valuable than full automation: follow-up semi-auto = 2-3 hrs vs full auto = 8-12 hrs. Client needs control, not full autonomy.",
+    "content": "For small service businesses, semi-automatic approach (Claude Code + one click) is more valuable than full automation: follow-up semi-auto = 2-3 hrs vs full auto = 8-12 hrs. Client needs control, not full autonomy.",
     "importance": 0.8,
     "tags": ["product-strategy", "semi-auto-vs-auto"]
   },
