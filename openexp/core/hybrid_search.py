@@ -165,8 +165,11 @@ def hybrid_search(
         status_multiplier = STATUS_WEIGHTS.get(status, 1.0)
 
         # Explicit None checks — 0.0 is a valid Q-value (downranked memory)
+        # Priority: top-level result (set by direct_search from q_cache) > payload > metadata > q_estimate > default
         from .q_value import DEFAULT_Q_CONFIG
-        q_value = payload.get("q_value")
+        q_value = result.get("q_value")
+        if q_value is None:
+            q_value = payload.get("q_value")
         if q_value is None:
             q_value = metadata.get("q_value")
         if q_value is None:

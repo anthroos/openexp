@@ -183,11 +183,33 @@ class QCache:
     def __len__(self):
         return len(self._cache)
 
-    def save(self, path: Path):
+    def _write_to_disk(self, path: Path):
+        """Write cache to file (no locking — caller must hold lock if needed)."""
         data = {k: v for k, v in self._cache.items()}
         tmp_path = path.with_suffix(".tmp")
         tmp_path.write_text(json.dumps(data, ensure_ascii=False))
         tmp_path.rename(path)
+
+    def save(self, path: Path):
+        """Save cache to file with exclusive file locking to prevent concurrent overwrites."""
+        lock_path = path.with_suffix(".lock")
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fd = open(lock_path, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            # Re-read file under lock to merge any changes written by other processes
+            if path.exists():
+                try:
+                    disk_data = json.loads(path.read_text())
+                    for mem_id, exp_dict in disk_data.items():
+                        if mem_id not in self._cache:
+                            self._cache[mem_id] = exp_dict
+                except (json.JSONDecodeError, OSError):
+                    pass  # Corrupt file — our in-memory data takes precedence
+            self._write_to_disk(path)
+        finally:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            lock_fd.close()
 
     def load(self, path: Path):
         if path.exists():
@@ -264,10 +286,10 @@ class QCache:
                     except (json.JSONDecodeError, OSError) as e:
                         logger.warning("Failed to merge delta %s: %s", delta_file, e)
                 if merged_any:
-                    self.save(path)
+                    self._write_to_disk(path)
             if self._migrated:
                 if not merged_any:
-                    self.save(path)
+                    self._write_to_disk(path)
                 self._migrated = False
         finally:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)

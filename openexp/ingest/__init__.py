@@ -61,7 +61,7 @@ def ingest_session(
     result = {}
 
     if not sessions_only:
-        obs_result = ingest_observations(max_count=max_count, dry_run=dry_run)
+        obs_result = ingest_observations(max_count=max_count, dry_run=dry_run, experience=experience.name)
         result["observations"] = obs_result
     else:
         result["observations"] = {"skipped": True}
@@ -83,6 +83,18 @@ def ingest_session(
         session_obs = [o for o in raw_obs if session_id in o.get("session_id", "")]
     else:
         session_obs = raw_obs
+
+    # If raw_obs was empty (observations already ingested via watermark),
+    # read this session's observations directly from JSONL files.
+    if session_id and not session_obs:
+        from .observation import _load_observations, OBSERVATIONS_DIR
+        all_obs = _load_observations(OBSERVATIONS_DIR)
+        session_obs = [
+            o for o in all_obs
+            if session_id in o.get("session_id", "") or o.get("session_id", "").startswith(session_id[:8])
+        ]
+        if session_obs:
+            logger.info("Read %d observations for session %s from JSONL (already ingested)", len(session_obs), session_id[:8])
 
     if session_id and session_obs:
         # BUG FIX: pass experience weights instead of hardcoded defaults

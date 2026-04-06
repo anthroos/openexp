@@ -15,6 +15,14 @@ from openexp.ingest.reward import compute_session_reward, reward_retrieved_memor
 from openexp.ingest.retrieval_log import log_retrieval, get_session_retrievals
 
 
+@pytest.fixture(autouse=True)
+def _isolate_reward_log(tmp_path):
+    """Prevent tests from polluting the real reward_log.jsonl."""
+    log_path = tmp_path / "reward_log.jsonl"
+    with patch("openexp.core.reward_log.REWARD_LOG_PATH", log_path):
+        yield
+
+
 # Override autouse async fixture from conftest.py
 @pytest.fixture(autouse=True)
 def cleanup_test_memories():

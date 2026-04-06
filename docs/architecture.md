@@ -79,6 +79,7 @@ Converts raw observations (JSONL) into embedded vectors in Qdrant:
 4. **reward.py** — Computes session productivity score, applies Q-value updates (all 3 layers)
 5. **retrieval_log.py** — Tracks which memories were recalled (for closed-loop reward)
 6. **watermark.py** — Idempotency: prevents duplicate ingestion
+7. **extract_decisions.py** — Opus 4.6 extracts strategic decisions/insights from transcripts (Phase 2c)
 
 ### Outcome Resolution (`openexp/outcome.py` + `openexp/resolvers/`)
 
@@ -99,7 +100,7 @@ Shell scripts registered with Claude Code:
 - **session-start.sh** — Builds contextual query, searches Qdrant, formats results, logs retrieval
 - **user-prompt-recall.sh** — Per-message recall (skips trivial inputs), logs retrieval
 - **post-tool-use.sh** — Captures Write/Edit/Bash observations, skips Read/Glob/Grep
-- **session-end.sh** — Generates session summary, triggers async ingest + reward computation
+- **session-end.sh** — Generates session summary, triggers async ingest + reward + decision extraction
 
 ## Data Persistence
 

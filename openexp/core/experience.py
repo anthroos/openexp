@@ -45,6 +45,7 @@ class Experience:
     q_config_overrides: Dict[str, float] = field(default_factory=dict)
     process_stages: List[ProcessStage] = field(default_factory=list)
     reward_memory_types: List[str] = field(default_factory=list)
+    detect_keywords: List[str] = field(default_factory=list)
 
 
 DEFAULT_EXPERIENCE = Experience(
@@ -108,6 +109,7 @@ def _parse_yaml(path: Path) -> Experience:
         q_config_overrides=data.get("q_config_overrides", {}),
         process_stages=process_stages,
         reward_memory_types=data.get("reward_memory_types", []),
+        detect_keywords=data.get("detect_keywords", []),
     )
 
 
@@ -205,3 +207,64 @@ def list_experiences() -> List[Experience]:
         experiences.insert(0, DEFAULT_EXPERIENCE)
 
     return experiences
+
+
+# --- Experience auto-detection from prompt text ---
+
+# Minimum keyword matches required to switch from default
+_DETECT_THRESHOLD = 2
+
+
+def detect_experience_from_prompt(prompt: str) -> str:
+    """Detect the best-matching experience from a user prompt using keyword scoring.
+
+    Returns the experience name with the most keyword hits (minimum 2),
+    or "default" if no experience reaches the threshold.
+    """
+    if not prompt or len(prompt) < 10:
+        return "default"
+
+    prompt_lower = prompt.lower()
+    experiences = list_experiences()
+
+    best_name = "default"
+    best_score = 0
+
+    for exp in experiences:
+        if not exp.detect_keywords or exp.name == "default":
+            continue
+        score = sum(1 for kw in exp.detect_keywords if kw in prompt_lower)
+        if score > best_score and score >= _DETECT_THRESHOLD:
+            best_score = score
+            best_name = exp.name
+
+    if best_name != "default":
+        logger.debug("Auto-detected experience '%s' (score=%d) from prompt", best_name, best_score)
+
+    return best_name
+
+
+def save_session_experience(session_id: str, experience_name: str) -> None:
+    """Persist detected experience for a session (for session-end to read)."""
+    from .config import DATA_DIR
+    exp_file = DATA_DIR / f"session_{session_id}_experience.txt"
+    exp_file.parent.mkdir(parents=True, exist_ok=True)
+    exp_file.write_text(experience_name)
+
+
+def get_session_experience(session_id: str) -> Optional[str]:
+    """Read the detected experience for a session, if saved."""
+    from .config import DATA_DIR
+    exp_file = DATA_DIR / f"session_{session_id}_experience.txt"
+    if exp_file.exists():
+        name = exp_file.read_text().strip()
+        if _validate_experience_name(name):
+            return name
+    return None
+
+
+def cleanup_session_experience(session_id: str) -> None:
+    """Remove the session experience file after session-end processing."""
+    from .config import DATA_DIR
+    exp_file = DATA_DIR / f"session_{session_id}_experience.txt"
+    exp_file.unlink(missing_ok=True)

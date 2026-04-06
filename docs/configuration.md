@@ -45,6 +45,15 @@ Without `ANTHROPIC_API_KEY`, memories are stored with basic metadata. The system
 
 See [Experiences Guide](experiences.md) for details on creating custom experiences.
 
+### Decision Extraction
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENEXP_EXTRACT_MODEL` | `claude-opus-4-6` | LLM model for extraction (do not downgrade) |
+| `OPENEXP_EXTRACT_MAX_TOKENS` | `2048` | Max response tokens |
+| `OPENEXP_EXTRACT_CONTEXT_LIMIT` | `30000` | Max chars of transcript sent to LLM |
+
+Decision extraction uses `claude -p` (Claude Code pipe mode) to leverage your Max subscription. No API key needed.
+
 ### Ingest Pipeline
 | Variable | Default | Description |
 |----------|---------|-------------|
