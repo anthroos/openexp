@@ -58,3 +58,22 @@ reward_memory_types:
   - decision
   - insight
   - outcome
+
+# Keywords for auto-detection from prompt text (EN + UK)
+detect_keywords:
+  - invoice
+  - payment
+  - nda
+  - pricing
+  - negotiation
+  - sow
+  - billing
+  - paid
+  - quote
+  - інвойс
+  - оплат
+  - рахунок
+  - ціна
+  - переговор
+  - акт
+  - нда

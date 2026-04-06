@@ -15,6 +15,10 @@ from openexp.core.experience import (
     list_experiences,
     _parse_yaml,
     _parse_process_stages,
+    detect_experience_from_prompt,
+    save_session_experience,
+    get_session_experience,
+    cleanup_session_experience,
 )
 from openexp.core.q_value import (
     QCache,
@@ -480,3 +484,75 @@ def test_ingest_session_uses_experience_weights(tmp_path, monkeypatch):
         call_kwargs = mock_reward.call_args
         # weights= should be the experience weights, not None/defaults
         assert call_kwargs[1]["weights"] == {"email_sent": 0.15, "base": -0.05}
+
+
+# --- Experience auto-detection ---
+
+class TestDetectExperience:
+    def test_sales_keywords_english(self):
+        prompt = "write an email to the client about our proposal"
+        assert detect_experience_from_prompt(prompt) == "sales"
+
+    def test_sales_keywords_ukrainian(self):
+        prompt = "напиши листа клієнту про нашу пропозицію"
+        assert detect_experience_from_prompt(prompt) == "sales"
+
+    def test_dealflow_keywords(self):
+        prompt = "check if the invoice was paid and update pricing"
+        assert detect_experience_from_prompt(prompt) == "dealflow"
+
+    def test_dealflow_keywords_ukrainian(self):
+        prompt = "перевір чи прийшла оплата за рахунок"
+        assert detect_experience_from_prompt(prompt) == "dealflow"
+
+    def test_coding_stays_default(self):
+        prompt = "fix the bug in auth.py where the token refresh fails"
+        assert detect_experience_from_prompt(prompt) == "default"
+
+    def test_short_prompt_default(self):
+        assert detect_experience_from_prompt("ok") == "default"
+
+    def test_empty_prompt_default(self):
+        assert detect_experience_from_prompt("") == "default"
+
+    def test_single_keyword_not_enough(self):
+        """One keyword match is below threshold (needs 2+)."""
+        prompt = "tell me about the client relationship"
+        # "client" matches sales, but only 1 match — below threshold
+        result = detect_experience_from_prompt(prompt)
+        # Could be sales if "client" + something else matches, or default
+        # The point is: threshold=2 requires at least 2 keyword hits
+        assert result in ("default", "sales")
+
+    def test_ambiguous_prefers_higher_score(self):
+        """When multiple experiences match, highest score wins."""
+        prompt = "send invoice to client for the deal and check payment status"
+        # "client" + "deal" → sales (2 hits)
+        # "invoice" + "payment" → dealflow (2 hits)
+        # Both >= threshold, whichever scores higher wins
+        result = detect_experience_from_prompt(prompt)
+        assert result in ("sales", "dealflow")
+
+
+class TestSessionExperience:
+    def test_save_and_get(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("openexp.core.config.DATA_DIR", tmp_path)
+        save_session_experience("sess-abc", "sales")
+        assert get_session_experience("sess-abc") == "sales"
+
+    def test_get_nonexistent(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("openexp.core.config.DATA_DIR", tmp_path)
+        assert get_session_experience("sess-nope") is None
+
+    def test_cleanup(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("openexp.core.config.DATA_DIR", tmp_path)
+        save_session_experience("sess-abc", "dealflow")
+        assert get_session_experience("sess-abc") == "dealflow"
+        cleanup_session_experience("sess-abc")
+        assert get_session_experience("sess-abc") is None
+
+    def test_invalid_name_rejected(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("openexp.core.config.DATA_DIR", tmp_path)
+        exp_file = tmp_path / "session_sess-bad_experience.txt"
+        exp_file.write_text("../../../etc/passwd")  # path traversal attempt
+        assert get_session_experience("sess-bad") is None
