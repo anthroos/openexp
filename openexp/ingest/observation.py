@@ -163,8 +163,9 @@ def _detect_client_id(obs: Dict) -> Optional[str]:
 def _load_observations(obs_dir: Path, processed_ids: set = None) -> List[Dict]:
     """Load all observations from JSONL files in directory.
 
-    Streams line-by-line to avoid loading entire files into memory.
-    Skips files larger than MAX_FILE_SIZE and already-processed IDs early.
+    Handles both true JSONL (one JSON per line) and multi-line pretty-printed
+    JSON objects (caused by jq without -c flag). Streams line-by-line for
+    JSONL, falls back to json.JSONDecoder for multi-line.
     """
     all_obs = []
     for f in sorted(obs_dir.glob("observations-*.jsonl")):
@@ -175,20 +176,61 @@ def _load_observations(obs_dir: Path, processed_ids: set = None) -> List[Dict]:
         if file_size > MAX_FILE_SIZE:
             logger.warning("Skipping oversized observation file %s (%d bytes > %d limit)", f, file_size, MAX_FILE_SIZE)
             continue
-        with open(f, encoding="utf-8") as fh:
-            for line in fh:
+
+        content = f.read_text(encoding="utf-8")
+        file_obs = []
+
+        # Try JSONL first (fast path: first non-empty line is valid JSON)
+        first_line = ""
+        for line in content.split("\n"):
+            line = line.strip()
+            if line:
+                first_line = line
+                break
+
+        is_jsonl = False
+        if first_line:
+            try:
+                json.loads(first_line)
+                is_jsonl = True
+            except json.JSONDecodeError:
+                pass
+
+        if is_jsonl:
+            for line in content.split("\n"):
                 line = line.strip()
                 if not line:
                     continue
                 try:
                     obs = json.loads(line)
-                except json.JSONDecodeError as e:
-                    logger.warning("Skipping malformed JSONL line in %s: %s", f, e)
+                except json.JSONDecodeError:
                     continue
-                # Skip already-processed IDs early to save memory
-                if processed_ids and obs.get("id", "") in processed_ids:
-                    continue
-                all_obs.append(obs)
+                file_obs.append(obs)
+        else:
+            # Multi-line JSON: use decoder to extract consecutive objects
+            decoder = json.JSONDecoder()
+            idx = 0
+            while idx < len(content):
+                # Skip whitespace
+                while idx < len(content) and content[idx] in " \t\n\r":
+                    idx += 1
+                if idx >= len(content):
+                    break
+                try:
+                    obj, end_idx = decoder.raw_decode(content, idx)
+                    file_obs.append(obj)
+                    idx = end_idx
+                except json.JSONDecodeError:
+                    # Skip to next line
+                    next_nl = content.find("\n", idx)
+                    idx = next_nl + 1 if next_nl != -1 else len(content)
+
+        # Filter already-processed IDs
+        for obs in file_obs:
+            if processed_ids and obs.get("id", "") in processed_ids:
+                continue
+            all_obs.append(obs)
+
     return all_obs
 
 
