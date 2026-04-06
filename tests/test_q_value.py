@@ -255,3 +255,72 @@ def test_q_updater_batch_with_reward_context():
     results = updater.batch_update(["a", "b"], reward=0.5, reward_context="Session +0.20: 1 commit")
     assert results["a"]["reward_contexts"] == ["Session +0.20: 1 commit"]
     assert results["b"]["reward_contexts"] == ["Session +0.20: 1 commit"]
+
+
+def test_protected_memory_skips_negative_reward():
+    """Protected memories should not decrease Q-value on negative reward."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+
+    # First give it a positive reward
+    result = updater.update("mem1", reward=0.8)
+    q_after_positive = result["q_value"]
+    assert q_after_positive > 0
+
+    # Mark as protected
+    q_data = cache.get("mem1")
+    q_data["protected"] = True
+    cache.set("mem1", q_data)
+
+    # Negative reward should NOT decrease Q
+    result = updater.update("mem1", reward=-0.5)
+    assert result["q_value"] == q_after_positive  # unchanged
+    assert result["q_visits"] == 2  # visit still counted
+    assert any("protected" in c for c in result.get("reward_contexts", []))
+
+
+def test_protected_memory_accepts_positive_reward():
+    """Protected memories should still increase Q-value on positive reward."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+
+    # Give initial positive reward and protect
+    result = updater.update("mem1", reward=0.5)
+    q_data = cache.get("mem1")
+    q_data["protected"] = True
+    cache.set("mem1", q_data)
+    q_before = q_data["q_value"]
+
+    # Positive reward should still work
+    result = updater.update("mem1", reward=0.5)
+    assert result["q_value"] > q_before
+
+
+def test_protected_memory_update_all_layers_skips_negative():
+    """Protected memories skip negative rewards in update_all_layers."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+
+    # Set up with positive Q and protect
+    updater.update_all_layers("mem1", {"action": 0.5, "hypothesis": 0.3, "fit": 0.4})
+    q_data = cache.get("mem1")
+    q_before = q_data["q_value"]
+    q_data["protected"] = True
+    cache.set("mem1", q_data)
+
+    # Negative rewards across all layers should be skipped
+    result = updater.update_all_layers("mem1", {"action": -0.5, "hypothesis": -0.3, "fit": -0.4})
+    assert result["q_value"] == q_before  # unchanged
+
+
+def test_unprotected_memory_takes_negative_reward():
+    """Non-protected memories should decrease Q-value normally."""
+    cache = QCache()
+    updater = QValueUpdater(cache=cache)
+
+    result = updater.update("mem1", reward=0.8)
+    q_after_positive = result["q_value"]
+
+    # Without protection, negative reward decreases Q
+    result = updater.update("mem1", reward=-0.5)
+    assert result["q_value"] < q_after_positive
