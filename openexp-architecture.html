@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenExp — Architecture</title>
+<style>
+:root {
+  --bg: #0a0e1a;
+  --bg-card: #141b2d;
+  --bg-card-hover: #1a2340;
+  --border: #1e2d4a;
+  --border-accent: #2a3f6e;
+  --text: #e2e8f0;
+  --text-dim: #94a3b8;
+  --text-muted: #5a6a85;
+  --accent: #6366f1;
+  --accent-light: #818cf8;
+  --green: #22c55e;
+  --green-dim: rgba(34,197,94,0.12);
+  --orange: #f59e0b;
+  --orange-dim: rgba(245,158,11,0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.12);
+  --blue: #3b82f6;
+  --blue-dim: rgba(59,130,246,0.12);
+  --purple: #a855f7;
+  --purple-dim: rgba(168,85,247,0.12);
+  --cyan: #06b6d4;
+  --cyan-dim: rgba(6,182,212,0.12);
+  --pink: #ec4899;
+  --pink-dim: rgba(236,72,153,0.12);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font-family:'Inter','Segoe UI',system-ui,sans-serif; line-height:1.6; }
+.container { max-width:1200px; margin:0 auto; padding:0 24px; }
+
+/* Header */
+.hero { text-align:center; padding:48px 0 16px; }
+.hero h1 { font-size:2.2rem; font-weight:800; letter-spacing:-0.02em; }
+.hero h1 em { font-style:normal; background:linear-gradient(135deg,var(--accent),var(--purple)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+.hero .tagline { color:var(--text-dim); font-size:1.05rem; margin-top:8px; max-width:640px; margin-left:auto; margin-right:auto; }
+
+/* Value proposition */
+.value-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin:36px 0 48px; }
+.value-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:20px; position:relative; overflow:hidden; }
+.value-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:12px 12px 0 0; }
+.value-card.v1::before { background:linear-gradient(90deg,var(--green),var(--cyan)); }
+.value-card.v2::before { background:linear-gradient(90deg,var(--accent),var(--purple)); }
+.value-card.v3::before { background:linear-gradient(90deg,var(--orange),var(--pink)); }
+.value-card h3 { font-size:0.95rem; font-weight:700; margin-bottom:6px; }
+.value-card p { font-size:0.85rem; color:var(--text-dim); line-height:1.5; }
+.value-card .icon { font-size:1.6rem; margin-bottom:10px; display:block; }
+
+/* Section headers */
+.section-head { margin:48px 0 24px; }
+.section-head h2 { font-size:1.4rem; font-weight:700; letter-spacing:-0.01em; }
+.section-head p { color:var(--text-dim); font-size:0.9rem; margin-top:4px; }
+
+/* Architecture grid — component diagram */
+.arch-grid { display:grid; grid-template-columns:1fr; gap:0; position:relative; }
+
+/* Layer row */
+.layer { display:grid; gap:16px; margin-bottom:8px; position:relative; }
+.layer-label { position:absolute; left:-8px; top:50%; transform:translateY(-50%) rotate(-90deg); font-size:0.65rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--text-muted); white-space:nowrap; font-weight:600; z-index:5; }
+.layer.l-hooks { grid-template-columns:repeat(4,1fr); }
+.layer.l-core { grid-template-columns:1fr 1fr 1fr; }
+.layer.l-storage { grid-template-columns:1fr 1fr 1fr; }
+.layer.l-interface { grid-template-columns:1fr 1fr; }
+
+/* Component card */
+.comp { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:16px; transition:border-color 0.2s, background 0.2s; position:relative; }
+.comp:hover { border-color:var(--border-accent); background:var(--bg-card-hover); }
+.comp .comp-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.comp .comp-icon { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:0.9rem; flex-shrink:0; }
+.comp .comp-name { font-size:0.85rem; font-weight:700; }
+.comp .comp-file { font-size:0.7rem; color:var(--text-muted); font-family:'JetBrains Mono','Cascadia Code',monospace; }
+.comp .comp-desc { font-size:0.8rem; color:var(--text-dim); line-height:1.5; margin-bottom:8px; }
+.comp .comp-why { font-size:0.75rem; color:var(--text-muted); line-height:1.4; border-top:1px solid var(--border); padding-top:8px; }
+.comp .comp-why strong { color:var(--text-dim); }
+
+/* Color coding by type */
+.comp.t-hook .comp-icon { background:var(--green-dim); color:var(--green); }
+.comp.t-hook { border-left:3px solid rgba(34,197,94,0.3); }
+.comp.t-core .comp-icon { background:var(--blue-dim); color:var(--blue); }
+.comp.t-core { border-left:3px solid rgba(59,130,246,0.3); }
+.comp.t-storage .comp-icon { background:var(--purple-dim); color:var(--purple); }
+.comp.t-storage { border-left:3px solid rgba(168,85,247,0.3); }
+.comp.t-interface .comp-icon { background:var(--orange-dim); color:var(--orange); }
+.comp.t-interface { border-left:3px solid rgba(245,158,11,0.3); }
+.comp.t-reward .comp-icon { background:var(--pink-dim); color:var(--pink); }
+.comp.t-reward { border-left:3px solid rgba(236,72,153,0.3); }
+
+/* Flow arrows between layers */
+.flow-arrows { display:flex; justify-content:center; align-items:center; gap:16px; padding:6px 0; color:var(--text-muted); font-size:0.75rem; }
+.flow-arrows .arrow { color:var(--accent); font-size:1.1rem; }
+.flow-arrows .flow-label { color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; background:var(--bg); padding:2px 12px; border-radius:4px; border:1px solid var(--border); }
+
+/* Data flow diagram — SVG */
+.dataflow { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:32px 24px; margin:32px 0; }
+.dataflow h3 { font-size:1rem; font-weight:700; margin-bottom:20px; text-align:center; }
+
+/* Why section */
+.why-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:16px; margin:24px 0 48px; }
+.why-card { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:20px; }
+.why-card h4 { font-size:0.9rem; font-weight:700; margin-bottom:6px; display:flex; align-items:center; gap:8px; }
+.why-card h4 .q { color:var(--accent-light); }
+.why-card p { font-size:0.83rem; color:var(--text-dim); line-height:1.5; }
+.why-card code { background:rgba(99,102,241,0.15); padding:1px 5px; border-radius:3px; font-size:0.78rem; font-family:'JetBrains Mono',monospace; }
+
+/* Formula section */
+.formula-section { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:28px; margin:32px 0; }
+.formula-section h3 { font-size:1rem; font-weight:700; margin-bottom:16px; }
+.formula-bar { display:flex; height:40px; border-radius:8px; overflow:hidden; margin-bottom:14px; }
+.formula-bar > div { display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; color:#fff; }
+.bar-semantic { width:30%; background:#6366f1; }
+.bar-keyword { width:10%; background:#8b5cf6; }
+.bar-recency { width:15%; background:#a855f7; }
+.bar-importance { width:15%; background:#d946ef; }
+.bar-qvalue { width:30%; background:var(--orange); }
+.formula-legend { display:flex; flex-wrap:wrap; gap:14px; font-size:0.8rem; color:var(--text-dim); }
+.formula-legend span { display:flex; align-items:center; gap:5px; }
+.formula-legend .dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+.formula-note { margin-top:14px; font-size:0.8rem; color:var(--text-muted); line-height:1.5; border-top:1px solid var(--border); padding-top:12px; }
+
+/* Q-update */
+.q-update { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+.q-box { background:rgba(0,0,0,0.2); border-radius:8px; padding:14px; font-family:'JetBrains Mono',monospace; font-size:0.82rem; line-height:1.7; }
+.q-box .label { font-family:'Inter',sans-serif; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-muted); margin-bottom:6px; display:block; }
+.q-box .hl { color:var(--orange); }
+.q-box .cm { color:var(--text-muted); }
+
+/* Closed loop */
+.loop-banner { text-align:center; margin:40px 0; }
+.loop-inner { display:inline-flex; align-items:center; gap:14px; background:var(--bg-card); border:2px solid var(--orange); border-radius:28px; padding:14px 28px; }
+.loop-inner .loop-text { font-size:0.95rem; color:var(--text-dim); }
+.loop-inner .loop-text strong { color:var(--orange); }
+
+/* Comparison */
+.compare { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin:24px 0 48px; }
+.compare-card { border-radius:12px; padding:24px; }
+.compare-card.old { background:var(--red-dim); border:1px solid rgba(239,68,68,0.2); }
+.compare-card.new { background:var(--green-dim); border:1px solid rgba(34,197,94,0.2); }
+.compare-card h4 { font-size:0.9rem; font-weight:700; margin-bottom:10px; }
+.compare-card.old h4 { color:var(--red); }
+.compare-card.new h4 { color:var(--green); }
+.compare-card ul { list-style:none; font-size:0.83rem; color:var(--text-dim); }
+.compare-card ul li { padding:3px 0; padding-left:18px; position:relative; }
+.compare-card.old ul li::before { content:'✕'; position:absolute; left:0; color:var(--red); font-weight:700; font-size:0.75rem; }
+.compare-card.new ul li::before { content:'✓'; position:absolute; left:0; color:var(--green); font-weight:700; font-size:0.75rem; }
+
+/* Footer */
+.footer { text-align:center; padding:40px 0 56px; color:var(--text-muted); font-size:0.85rem; }
+.footer a { color:var(--accent-light); text-decoration:underline; }
+
+@media (max-width:768px) {
+  .value-strip { grid-template-columns:1fr; }
+  .layer.l-hooks { grid-template-columns:repeat(2,1fr); }
+  .layer.l-core, .layer.l-storage { grid-template-columns:1fr; }
+  .layer.l-interface { grid-template-columns:1fr; }
+  .compare { grid-template-columns:1fr; }
+  .q-update { grid-template-columns:1fr; }
+  .why-grid { grid-template-columns:1fr; }
+  .formula-bar > div { font-size:0.6rem; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ===== HERO ===== -->
+<div class="hero">
+  <h1><em>OpenExp</em> Architecture</h1>
+  <p class="tagline">An experience layer for AI agents. Not just memory &mdash; memory that learns which memories are useful.</p>
+</div>
+
+<!-- ===== VALUE PROPOSITION ===== -->
+<div class="value-strip">
+  <div class="value-card v1">
+    <span class="icon">&oplus;</span>
+    <h3>Zero-effort capture</h3>
+    <p>Hooks observe every tool call automatically. No manual tagging, no save buttons. The agent just works &mdash; and everything important is recorded.</p>
+  </div>
+  <div class="value-card v2">
+    <span class="icon">&circlearrowright;</span>
+    <h3>Self-improving retrieval</h3>
+    <p>Q-learning ranks memories by actual usefulness. Memories that led to commits, PRs, closed deals get promoted. Noise gets demoted. Automatically.</p>
+  </div>
+  <div class="value-card v3">
+    <span class="icon">&target;</span>
+    <h3>Context-aware learning</h3>
+    <p>Different "Experiences" define what success looks like. Coding session rewards differ from sales. The system learns what works <em>in each context</em>.</p>
+  </div>
+</div>
+
+<!-- ===== COMPONENT DIAGRAM ===== -->
+<div class="section-head">
+  <h2>Components</h2>
+  <p>Each component is isolated with a single responsibility. They communicate through files and APIs &mdash; no tight coupling.</p>
+</div>
+
+<!-- Layer 1: Hooks (event sources) -->
+<div class="flow-arrows"><span class="flow-label">Event Sources &mdash; Claude Code Hooks</span></div>
+<div class="layer l-hooks">
+  <div class="comp t-hook">
+    <div class="comp-head">
+      <div class="comp-icon">&#9881;</div>
+      <div>
+        <div class="comp-name">Observer</div>
+        <div class="comp-file">hooks/post-tool-use.sh</div>
+      </div>
+    </div>
+    <div class="comp-desc">Records every Edit, Write, Bash action as a JSONL observation. Filters out read-only noise (Glob, Grep, Read).</div>
+    <div class="comp-why"><strong>Why:</strong> Raw signal capture. Without this, the system has nothing to learn from. Filtering prevents storage bloat.</div>
+  </div>
+  <div class="comp t-hook">
+    <div class="comp-head">
+      <div class="comp-icon">&#9654;</div>
+      <div>
+        <div class="comp-name">Session Start</div>
+        <div class="comp-file">hooks/session-start.sh</div>
+      </div>
+    </div>
+    <div class="comp-desc">Searches Qdrant for top-10 relevant memories and injects them as context. Logs retrieval IDs for the reward loop.</div>
+    <div class="comp-why"><strong>Why:</strong> The agent starts every session informed by past experience. ID logging enables closed-loop reward.</div>
+  </div>
+  <div class="comp t-hook">
+    <div class="comp-head">
+      <div class="comp-icon">&#9632;</div>
+      <div>
+        <div class="comp-name">Session End</div>
+        <div class="comp-file">hooks/session-end.sh</div>
+      </div>
+    </div>
+    <div class="comp-desc">Triggers full pipeline: summary generation &rarr; observation ingest &rarr; session reward &rarr; Q-value updates.</div>
+    <div class="comp-why"><strong>Why:</strong> Batch processing at session boundary. More efficient than per-action processing, ensures atomic ingest.</div>
+  </div>
+  <div class="comp t-hook">
+    <div class="comp-head">
+      <div class="comp-icon">&#9993;</div>
+      <div>
+        <div class="comp-name">Prompt Recall + Auto-Detect</div>
+        <div class="comp-file">hooks/user-prompt-recall.sh</div>
+      </div>
+    </div>
+    <div class="comp-desc">Per-message context injection with <strong>experience auto-detection</strong>. Classifies prompt keywords (EN+UK) to switch between coding, sales, or dealflow. Searches with the correct experience so proven-useful memories rank higher.</div>
+    <div class="comp-why"><strong>Why:</strong> A memory about a successful proposal should rank higher when doing sales, not coding. Auto-detection means zero manual mode switching.</div>
+  </div>
+</div>
+
+<div class="flow-arrows"><span class="arrow">&darr;</span> <span style="font-size:0.7rem">observations.jsonl</span> <span class="arrow">&darr;</span> <span style="font-size:0.7rem">retrieval IDs</span> <span class="arrow">&darr;</span></div>
+
+<!-- Layer 2: Core Engine -->
+<div class="flow-arrows"><span class="flow-label">Core Engine &mdash; Processing &amp; Intelligence</span></div>
+<div class="layer l-core">
+  <div class="comp t-core">
+    <div class="comp-head">
+      <div class="comp-icon">&#8645;</div>
+      <div>
+        <div class="comp-name">Ingester</div>
+        <div class="comp-file">ingest/observation.py + session.py</div>
+      </div>
+    </div>
+    <div class="comp-desc">Reads JSONL observations, embeds them with FastEmbed (BAAI/bge-small-en-v1.5, 384d), upserts vectors to Qdrant. Watermark-based idempotency prevents duplicates.</div>
+    <div class="comp-why"><strong>Why separate from hooks:</strong> Embedding is CPU-intensive. Running async at session-end keeps the agent responsive during work.</div>
+  </div>
+  <div class="comp t-core">
+    <div class="comp-head">
+      <div class="comp-icon">&#128269;</div>
+      <div>
+        <div class="comp-name">Hybrid Search</div>
+        <div class="comp-file">core/direct_search.py + hybrid_search.py</div>
+      </div>
+    </div>
+    <div class="comp-desc">Combines vector similarity (Qdrant) with BM25 keyword scoring, recency decay, importance weights, memory status, and Q-value ranking.</div>
+    <div class="comp-why"><strong>Why hybrid:</strong> Pure vector search misses keyword matches. Pure BM25 misses semantics. The combination + Q-value is what makes retrieval improve over time.</div>
+  </div>
+  <div class="comp t-reward">
+    <div class="comp-head">
+      <div class="comp-icon">&#9733;</div>
+      <div>
+        <div class="comp-name">Reward Engine</div>
+        <div class="comp-file">ingest/reward.py + outcome.py</div>
+      </div>
+    </div>
+    <div class="comp-desc">Evaluates session productivity (commits, PRs, tests) and external outcomes (deal closed, payment received). Propagates reward to retrieved memories via Q-learning.</div>
+    <div class="comp-why"><strong>Why 4 reward paths:</strong> Session signals are fast but noisy. Business outcomes are slow but high-signal. Both needed for robust learning.</div>
+  </div>
+</div>
+
+<div class="flow-arrows"><span class="arrow">&darr;</span> <span style="font-size:0.7rem">vectors + Q-updates</span> <span class="arrow">&darr;</span></div>
+
+<!-- Layer 3: Storage -->
+<div class="flow-arrows"><span class="flow-label">Storage &mdash; Persistent State</span></div>
+<div class="layer l-storage">
+  <div class="comp t-storage">
+    <div class="comp-head">
+      <div class="comp-icon">&#9670;</div>
+      <div>
+        <div class="comp-name">Qdrant</div>
+        <div class="comp-file">localhost:6333 (Docker)</div>
+      </div>
+    </div>
+    <div class="comp-desc">Vector database. Stores memory embeddings with metadata (type, importance, status, timestamps). Handles similarity search at scale.</div>
+    <div class="comp-why"><strong>Why Qdrant:</strong> Local-first (Docker), no API keys, no cloud dependency. Fast ANN search. Payload filtering for memory type/status.</div>
+  </div>
+  <div class="comp t-storage">
+    <div class="comp-head">
+      <div class="comp-icon">Q</div>
+      <div>
+        <div class="comp-name">Q-Cache</div>
+        <div class="comp-file">data/q_cache.json + deltas/</div>
+      </div>
+    </div>
+    <div class="comp-desc">JSON file storing Q-values per memory per experience. Three layers: action (50%), hypothesis (20%), fit (30%). File-locked for concurrent access.</div>
+    <div class="comp-why"><strong>Why separate from Qdrant:</strong> Q-values change every session. Updating Qdrant payloads on every reward would be expensive. JSON is fast read/write for the hot path.</div>
+  </div>
+  <div class="comp t-storage">
+    <div class="comp-head">
+      <div class="comp-icon">&#128221;</div>
+      <div>
+        <div class="comp-name">Observation Store</div>
+        <div class="comp-file">~/.openexp/observations/*.jsonl</div>
+      </div>
+    </div>
+    <div class="comp-desc">Daily JSONL files with raw observations. Source of truth before ingest. Watermark tracks which observations have been processed.</div>
+    <div class="comp-why"><strong>Why JSONL files:</strong> Append-only writes are fast and crash-safe. No DB needed for sequential writes. Easy to debug, grep, replay.</div>
+  </div>
+</div>
+
+<div class="flow-arrows"><span class="arrow">&darr;</span> <span style="font-size:0.7rem">search results + Q-values</span> <span class="arrow">&darr;</span></div>
+
+<!-- Layer 4: Interface -->
+<div class="flow-arrows"><span class="flow-label">Interface &mdash; How the Agent Accesses Memory</span></div>
+<div class="layer l-interface">
+  <div class="comp t-interface">
+    <div class="comp-head">
+      <div class="comp-icon">&#9881;</div>
+      <div>
+        <div class="comp-name">MCP Server</div>
+        <div class="comp-file">mcp_server.py (16 tools)</div>
+      </div>
+    </div>
+    <div class="comp-desc">STDIO MCP server exposing 16 tools to Claude Code: search_memory, add_memory, reflect, explain_q, experience_insights, calibrate, log_prediction, resolve_outcomes, etc.</div>
+    <div class="comp-why"><strong>Why MCP:</strong> Standard protocol for Claude Code tool integration. Agent calls tools naturally in conversation. No special client needed.</div>
+  </div>
+  <div class="comp t-interface">
+    <div class="comp-head">
+      <div class="comp-icon">&gt;_</div>
+      <div>
+        <div class="comp-name">CLI</div>
+        <div class="comp-file">cli.py</div>
+      </div>
+    </div>
+    <div class="comp-desc">Command-line interface for manual operations: search, ingest, stats, log-retrieval. Used by hooks (shell scripts call Python CLI) and for debugging.</div>
+    <div class="comp-why"><strong>Why CLI + MCP:</strong> Hooks run as shell scripts &mdash; they need CLI. Agent needs MCP. Same core, two interfaces.</div>
+  </div>
+</div>
+
+<!-- ===== CLOSED LOOP ===== -->
+<div class="loop-banner">
+  <div class="loop-inner">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="23 4 23 10 17 10"></polyline>
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+    </svg>
+    <span class="loop-text"><strong>Closed Loop:</strong> Retrieve &rarr; Use in session &rarr; Evaluate outcome &rarr; Reward retrieved memories &rarr; Better retrieval next time</span>
+  </div>
+</div>
+
+<!-- ===== SCORING FORMULA ===== -->
+<div class="formula-section">
+  <h3>Hybrid Scoring Formula</h3>
+  <div class="formula-bar">
+    <div class="bar-semantic">30%</div>
+    <div class="bar-keyword">10%</div>
+    <div class="bar-recency">15%</div>
+    <div class="bar-importance">15%</div>
+    <div class="bar-qvalue">30%</div>
+  </div>
+  <div class="formula-legend">
+    <span><div class="dot" style="background:#6366f1"></div> Semantic similarity (vector cosine)</span>
+    <span><div class="dot" style="background:#8b5cf6"></div> Keyword match (BM25)</span>
+    <span><div class="dot" style="background:#a855f7"></div> Recency (90-day half-life)</span>
+    <span><div class="dot" style="background:#d946ef"></div> Importance (type &times; tool weight)</span>
+    <span><div class="dot" style="background:var(--orange)"></div> <strong>Q-value (learned from outcomes)</strong></span>
+  </div>
+  <div class="formula-note">
+    The Q-value component is what makes OpenExp different from standard RAG. It's 30% of the final score &mdash; a memory with Q=0.9 (proven useful) scores 0.27 points higher than Q=0.0 (untested). This is enough to push a semantically weaker but historically useful memory above a closer but untested one.
+  </div>
+  <div class="q-update">
+    <div class="q-box">
+      <span class="label">Q-value update</span>
+      Q<sub>new</sub> = <span class="hl">clamp</span>(Q<sub>old</sub> + 0.25 &times; reward, -0.5, 1.0)
+      <br><span class="cm">// 3 layers: action 50%, hypothesis 20%, fit 30%</span>
+    </div>
+    <div class="q-box">
+      <span class="label">Reward signals</span>
+      git commit &rarr; <span class="hl">+0.3</span> | PR created &rarr; <span class="hl">+0.2</span>
+      <br>tests pass &rarr; <span class="hl">+0.1</span> | deal won &rarr; <span class="hl">+0.8</span>
+      <br>no output &rarr; <span class="hl">-0.1</span> | read-only &rarr; <span class="hl">-0.05</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WHY THIS ARCHITECTURE ===== -->
+<div class="section-head">
+  <h2>Design Decisions</h2>
+  <p>Every architectural choice has a reason. Here's why OpenExp is built this way.</p>
+</div>
+<div class="why-grid">
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why local-first, not cloud?</h4>
+    <p>Your code context, decisions, and work history are sensitive. OpenExp runs entirely on your machine: Qdrant in Docker, FastEmbed locally, no API calls. Your experience data never leaves your laptop.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why Q-learning instead of just vector search?</h4>
+    <p>Vector similarity finds <em>related</em> memories. Q-learning finds <em>useful</em> ones. A memory about a library that led to 3 successful PRs should rank higher than a similar one that led nowhere. Q-values encode outcome history.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why separate Q-cache from Qdrant?</h4>
+    <p>Q-values change every session (hot path). Qdrant payloads are expensive to update at scale. A JSON file with <code>fcntl.flock</code> gives fast, concurrent-safe reads/writes for the scoring formula.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why hooks, not an always-on daemon?</h4>
+    <p>Claude Code hooks are event-driven &mdash; they fire only when needed. No background process consuming resources. Zero config: install hooks once, everything works automatically.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why 4 hooks instead of 1?</h4>
+    <p><strong>Observer</strong> captures during work. <strong>Session Start</strong> loads context before work. <strong>Prompt Recall</strong> adds per-message precision. <strong>Session End</strong> processes and learns. Each has a distinct timing requirement.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why "Experiences"?</h4>
+    <p>A git commit is positive signal in coding, but irrelevant in sales outreach. Experiences let the same memory system work across different work contexts with context-appropriate reward functions.</p>
+  </div>
+  <div class="why-card">
+    <h4><span class="q">Q:</span> Why keyword detection, not LLM classification?</h4>
+    <p>The hook runs on <em>every</em> user message. LLM call = 500ms+ latency + API cost. Keyword matching runs in &lt;1ms, supports bilingual prompts (EN+UK), and requires zero API keys. Good enough for experience routing; LLM classification can be added for retrospective re-evaluation.</p>
+  </div>
+</div>
+
+<!-- ===== THE PROBLEM ===== -->
+<div class="section-head">
+  <h2>The Problem: More Context = Worse Performance</h2>
+  <p>Research shows LLMs degrade with longer context &mdash; even with perfect retrieval.</p>
+</div>
+<div class="why-grid">
+  <div class="why-card">
+    <h4>"Lost in the Middle" (Stanford/Meta, 2023)</h4>
+    <p>Accuracy drops from <strong>75% to 55%</strong> when relevant info is in the middle of the context. U-shaped attention curve across GPT-4, Claude, LLaMA.</p>
+  </div>
+  <div class="why-card">
+    <h4>"Context Length Alone Hurts" (EMNLP 2025)</h4>
+    <p>Even with <strong>perfect retrieval</strong>, performance degrades <strong>13.9&ndash;85%</strong> from context length alone. The length itself is the problem.</p>
+  </div>
+  <div class="why-card">
+    <h4>NoLiMa (ICML 2025)</h4>
+    <p>GPT-4o dropped from <strong>99.3% to 69.7%</strong> at just 32K tokens. 11/12 models fell below 50% of baseline.</p>
+  </div>
+</div>
+<div class="formula-section" style="border-color: var(--cyan); margin-bottom: 48px;">
+  <h3 style="color: var(--cyan);">OpenExp = Hippocampus for AI</h3>
+  <p style="color:var(--text-dim);font-size:0.9rem;line-height:1.6;">
+    Instead of dumping all context into the prompt, OpenExp works like a hippocampus: <strong>record everything, but replay only what proved useful</strong> in similar situations. The Q-learning loop ensures that memories which led to successful outcomes (closed deals, merged PRs, passed tests) get replayed preferentially &mdash; while noise gets naturally demoted.
+  </p>
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px;text-align:center;font-size:0.8rem;">
+    <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+      <div style="font-weight:700;color:var(--green);margin-bottom:4px;">Encoding</div>
+      <div style="color:var(--text-muted);">Observer hook records every action</div>
+    </div>
+    <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+      <div style="font-weight:700;color:var(--blue);margin-bottom:4px;">Consolidation</div>
+      <div style="color:var(--text-muted);">SessionEnd embeds &amp; stores in Qdrant</div>
+    </div>
+    <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+      <div style="font-weight:700;color:var(--purple);margin-bottom:4px;">Retrieval</div>
+      <div style="color:var(--text-muted);">Hybrid search with Q-value ranking</div>
+    </div>
+    <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+      <div style="font-weight:700;color:var(--orange);margin-bottom:4px;">Reinforcement</div>
+      <div style="color:var(--text-muted);">Reward loop strengthens useful paths</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== BEFORE / AFTER ===== -->
+<div class="section-head">
+  <h2>Standard RAG vs OpenExp</h2>
+</div>
+<div class="compare">
+  <div class="compare-card old">
+    <h4>Standard RAG Memory</h4>
+    <ul>
+      <li>Store everything, retrieve by similarity</li>
+      <li>Old irrelevant memory ranks same as yesterday's insight</li>
+      <li>No feedback loop &mdash; retrieval quality never improves</li>
+      <li>Manual curation needed to keep signal-to-noise ratio</li>
+      <li>Same retrieval logic regardless of work context</li>
+    </ul>
+  </div>
+  <div class="compare-card new">
+    <h4>OpenExp</h4>
+    <ul>
+      <li>Store everything, retrieve by <strong>proven usefulness</strong></li>
+      <li>Memories that led to results get promoted automatically</li>
+      <li>Closed-loop Q-learning improves retrieval every session</li>
+      <li>Noise gets demoted to Q &lt; 0 &mdash; zero manual curation</li>
+      <li>Experience-specific reward functions per work context</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ===== FOOTER ===== -->
+<div class="footer">
+  <p>Open source &middot; Fully local &middot; No API keys &middot; Works with Claude Code out of the box</p>
+  <p style="margin-top:8px;"><a href="https://github.com/anthroos/openexp">GitHub &rarr;</a></p>
+</div>
+
+</div><!-- /container -->
+</body>
+</html>
