@@ -194,22 +194,21 @@ class QCache:
         """Save cache to file with exclusive file locking to prevent concurrent overwrites."""
         lock_path = path.with_suffix(".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_fd = open(lock_path, "w")
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            # Re-read file under lock to merge any changes written by other processes
-            if path.exists():
-                try:
-                    disk_data = json.loads(path.read_text())
-                    for mem_id, exp_dict in disk_data.items():
-                        if mem_id not in self._cache:
-                            self._cache[mem_id] = exp_dict
-                except (json.JSONDecodeError, OSError):
-                    pass  # Corrupt file — our in-memory data takes precedence
-            self._write_to_disk(path)
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
+        with open(lock_path, "w") as lock_fd:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                # Re-read file under lock to merge any changes written by other processes
+                if path.exists():
+                    try:
+                        disk_data = json.loads(path.read_text())
+                        for mem_id, exp_dict in disk_data.items():
+                            if mem_id not in self._cache:
+                                self._cache[mem_id] = exp_dict
+                    except (json.JSONDecodeError, OSError):
+                        pass  # Corrupt file — our in-memory data takes precedence
+                self._write_to_disk(path)
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
     def load(self, path: Path):
         if path.exists():
@@ -257,43 +256,42 @@ class QCache:
         """
         lock_path = path.with_suffix(".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_fd = open(lock_path, "w")
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            self.load(path)
-            if deltas_dir.exists():
-                merged_any = False
-                for delta_file in sorted(deltas_dir.glob("q_delta_*.json")):
-                    try:
-                        delta_data = json.loads(delta_file.read_text())
+        merged_any = False
+        with open(lock_path, "w") as lock_fd:
+            try:
+                fcntl.flock(lock_fd, fcntl.LOCK_EX)
+                self.load(path)
+                if deltas_dir.exists():
+                    for delta_file in sorted(deltas_dir.glob("q_delta_*.json")):
+                        try:
+                            delta_data = json.loads(delta_file.read_text())
 
-                        # Auto-migrate delta if flat
-                        if _is_flat_format(delta_data):
-                            delta_data = _migrate_flat_to_nested(delta_data)
+                            # Auto-migrate delta if flat
+                            if _is_flat_format(delta_data):
+                                delta_data = _migrate_flat_to_nested(delta_data)
 
-                        for mem_id, exp_dict in delta_data.items():
-                            if mem_id not in self._cache:
-                                self._cache[mem_id] = {}
-                            for exp_name, q_data in exp_dict.items():
-                                existing = self._cache[mem_id].get(exp_name)
-                                if existing is None or _is_newer(q_data, existing):
-                                    self._cache[mem_id][exp_name] = q_data
-                            self._cache.move_to_end(mem_id)
-                            while len(self._cache) > self._max_size:
-                                self._cache.popitem(last=False)
-                        delta_file.unlink()
-                        merged_any = True
-                    except (json.JSONDecodeError, OSError) as e:
-                        logger.warning("Failed to merge delta %s: %s", delta_file, e)
-                if merged_any:
-                    self._write_to_disk(path)
-            if self._migrated:
-                if not merged_any:
-                    self._write_to_disk(path)
-                self._migrated = False
-        finally:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
+                            for mem_id, exp_dict in delta_data.items():
+                                if mem_id not in self._cache:
+                                    self._cache[mem_id] = {}
+                                for exp_name, q_data in exp_dict.items():
+                                    existing = self._cache[mem_id].get(exp_name)
+                                    if existing is None or _is_newer(q_data, existing):
+                                        self._cache[mem_id][exp_name] = q_data
+                                self._cache.move_to_end(mem_id)
+                                while len(self._cache) > self._max_size:
+                                    self._cache.popitem(last=False)
+                            delta_file.unlink()
+                            merged_any = True
+                        except (json.JSONDecodeError, OSError) as e:
+                            logger.warning("Failed to merge delta %s: %s", delta_file, e)
+                    if merged_any:
+                        self._write_to_disk(path)
+                if self._migrated:
+                    if not merged_any:
+                        self._write_to_disk(path)
+                    self._migrated = False
+            finally:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
 
 
 class QValueUpdater:

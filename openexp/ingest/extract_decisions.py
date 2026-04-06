@@ -21,12 +21,11 @@ logger = logging.getLogger(__name__)
 # Opus 4.6 — quality of extraction determines quality of the entire memory system.
 # This is not a place to save money. This is the annotation layer.
 EXTRACT_MODEL = os.getenv("OPENEXP_EXTRACT_MODEL", "claude-opus-4-6")
-EXTRACT_MAX_TOKENS = int(os.getenv("OPENEXP_EXTRACT_MAX_TOKENS", "2048"))
 # Max chars of transcript to send to LLM (cost control)
 EXTRACT_CONTEXT_LIMIT = int(os.getenv("OPENEXP_EXTRACT_CONTEXT_LIMIT", "30000"))
 
 EXTRACTION_PROMPT = """\
-You are analyzing a work session between Ivan (entrepreneur, AI/data labeling business) and his AI assistant.
+You are analyzing a work session between a user and their AI assistant.
 
 Your job: extract DECISIONS and STRATEGIC INSIGHTS — not actions.
 
@@ -244,14 +243,13 @@ def extract_and_store(
 
     # Store each item as a memory via the openexp API
     stored = 0
-    from ..core.config import COLLECTION_NAME, QDRANT_HOST, QDRANT_PORT
-    from ..core.direct_search import _embed
-    from qdrant_client import QdrantClient
+    from ..core.config import COLLECTION_NAME
+    from ..core.direct_search import _embed, _get_qdrant
     from qdrant_client.models import PointStruct
     import uuid
     from datetime import datetime, timezone
 
-    client = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT)
+    client = _get_qdrant()
 
     for item in items:
         content = item.get("content", "")

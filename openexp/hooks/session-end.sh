@@ -144,11 +144,12 @@ fi
   # Resolve experience: auto-detected (from prompts) → project .openexp.yaml → env var → default
   EXPERIENCE="${OPENEXP_EXPERIENCE:-default}"
   # Check if experience was auto-detected during this session
+  export OPENEXP_SESSION_ID_PHASE2="$SESSION_ID"
   AUTO_EXP=$("$PYTHON" -c "
-import sys
+import sys, os
 sys.path.insert(0, '.')
 from openexp.core.experience import get_session_experience
-exp = get_session_experience('$SESSION_ID')
+exp = get_session_experience(os.environ['OPENEXP_SESSION_ID_PHASE2'])
 print(exp or '')
 " 2>/dev/null)
   if [ -n "$AUTO_EXP" ]; then
@@ -164,7 +165,7 @@ print(d.get('experience',''))
   fi
   export OPENEXP_EXPERIENCE="$EXPERIENCE"
   # Phase 2a: Full ingest + session reward (ingests ALL pending obs, rewards THIS session)
-  "$PYTHON" -m openexp.cli ingest --session-id "$SESSION_ID" >> "$INGEST_LOG" 2>&1
+  "$PYTHON" -m openexp.cli ingest --session-id "$OPENEXP_SESSION_ID_PHASE2" >> "$INGEST_LOG" 2>&1
   EXIT_CODE=$?
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: ingest finished (exit=$EXIT_CODE)" >> "$INGEST_LOG"
 
@@ -172,11 +173,11 @@ print(d.get('experience',''))
   # raw_obs was empty and reward didn't fire above. Read obs from JSONL directly.
   # Guard: skip if reward was already applied for this session (idempotency).
   "$PYTHON" -c "
-import json, sys, logging
+import json, sys, os, logging
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
-session_id = '$SESSION_ID'
+session_id = os.environ['OPENEXP_SESSION_ID_PHASE2']
 data_dir = Path.home() / '.openexp' / 'data'
 reward_log = data_dir / 'reward_log.jsonl'
 
@@ -235,40 +236,50 @@ print(f'Fallback reward={reward:.2f} applied to {updated} retrieved memories ({l
 
   # Phase 2c: Decision extraction from transcript (Opus 4.6)
   # This is the most valuable step — extracts DECISIONS, not actions.
-  TRANSCRIPT_DIR="$HOME/.claude/projects/-Users-ivanpasichnyk"
+  # Discover transcript dir dynamically: ~/.claude/projects/ contains project dirs
   TRANSCRIPT_FILE=""
-  # Find transcript file for this session
-  for f in "$TRANSCRIPT_DIR"/*.jsonl; do
-    [ -f "$f" ] || continue
-    if grep -q "\"sessionId\":\"$SESSION_ID\"" "$f" 2>/dev/null; then
-      TRANSCRIPT_FILE="$f"
-      break
-    fi
-  done
-  # Also try partial match
-  if [ -z "$TRANSCRIPT_FILE" ]; then
-    for f in "$TRANSCRIPT_DIR"/*.jsonl; do
-      [ -f "$f" ] || continue
-      if grep -q "$SESSION_SHORT" "$f" 2>/dev/null; then
-        TRANSCRIPT_FILE="$f"
-        break
-      fi
+  CLAUDE_PROJECTS_DIR="$HOME/.claude/projects"
+  if [ -d "$CLAUDE_PROJECTS_DIR" ]; then
+    for project_dir in "$CLAUDE_PROJECTS_DIR"/*/; do
+      [ -d "$project_dir" ] || continue
+      for f in "$project_dir"*.jsonl; do
+        [ -f "$f" ] || continue
+        if grep -q "\"sessionId\":\"$SESSION_ID\"" "$f" 2>/dev/null; then
+          TRANSCRIPT_FILE="$f"
+          break 2
+        fi
+      done
     done
+    # Also try partial match
+    if [ -z "$TRANSCRIPT_FILE" ]; then
+      for project_dir in "$CLAUDE_PROJECTS_DIR"/*/; do
+        [ -d "$project_dir" ] || continue
+        for f in "$project_dir"*.jsonl; do
+          [ -f "$f" ] || continue
+          if grep -q "$SESSION_SHORT" "$f" 2>/dev/null; then
+            TRANSCRIPT_FILE="$f"
+            break 2
+          fi
+        done
+      done
+    fi
   fi
 
   if [ -n "$TRANSCRIPT_FILE" ]; then
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: extracting decisions from $TRANSCRIPT_FILE" >> "$INGEST_LOG"
+    export OPENEXP_TRANSCRIPT_FILE="$TRANSCRIPT_FILE"
+    export OPENEXP_EXPERIENCE_PHASE2="$EXPERIENCE"
     "$PYTHON" -c "
-import sys, json, logging
+import sys, json, os, logging
 sys.path.insert(0, '.')
 logging.basicConfig(level=logging.INFO)
 from pathlib import Path
 from openexp.ingest.extract_decisions import extract_and_store
 
 result = extract_and_store(
-    transcript_path=Path('$TRANSCRIPT_FILE'),
-    session_id='$SESSION_ID',
-    experience='$EXPERIENCE',
+    transcript_path=Path(os.environ['OPENEXP_TRANSCRIPT_FILE']),
+    session_id=os.environ['OPENEXP_SESSION_ID_PHASE2'],
+    experience=os.environ['OPENEXP_EXPERIENCE_PHASE2'],
 )
 print(json.dumps(result, default=str))
 " >> "$INGEST_LOG" 2>&1
@@ -279,10 +290,10 @@ print(json.dumps(result, default=str))
 
   # Cleanup session experience file
   "$PYTHON" -c "
-import sys
+import sys, os
 sys.path.insert(0, '.')
 from openexp.core.experience import cleanup_session_experience
-cleanup_session_experience('$SESSION_ID')
+cleanup_session_experience(os.environ['OPENEXP_SESSION_ID_PHASE2'])
 " 2>/dev/null
 ) &
 disown
