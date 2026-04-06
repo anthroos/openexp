@@ -9,6 +9,12 @@
 # reward never gets computed, and Q-values stay at 0.5 forever.
 set -uo pipefail
 
+# Guard: skip if running inside extraction subprocess (prevents recursion)
+if [ "${OPENEXP_EXTRACT_RUNNING:-}" = "1" ]; then
+  echo '{"hookSpecificOutput":{"hookEventName":"SessionEnd"}}'
+  exit 0
+fi
+
 # Resolve paths relative to this script
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OPENEXP_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -226,6 +232,50 @@ updated = reward_retrieved_memories(
 print(f'Fallback reward={reward:.2f} applied to {updated} retrieved memories ({len(session_obs)} obs)')
 " >> "$INGEST_LOG" 2>&1
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: fallback reward finished" >> "$INGEST_LOG"
+
+  # Phase 2c: Decision extraction from transcript (Opus 4.6)
+  # This is the most valuable step — extracts DECISIONS, not actions.
+  TRANSCRIPT_DIR="$HOME/.claude/projects/-Users-ivanpasichnyk"
+  TRANSCRIPT_FILE=""
+  # Find transcript file for this session
+  for f in "$TRANSCRIPT_DIR"/*.jsonl; do
+    [ -f "$f" ] || continue
+    if grep -q "\"sessionId\":\"$SESSION_ID\"" "$f" 2>/dev/null; then
+      TRANSCRIPT_FILE="$f"
+      break
+    fi
+  done
+  # Also try partial match
+  if [ -z "$TRANSCRIPT_FILE" ]; then
+    for f in "$TRANSCRIPT_DIR"/*.jsonl; do
+      [ -f "$f" ] || continue
+      if grep -q "$SESSION_SHORT" "$f" 2>/dev/null; then
+        TRANSCRIPT_FILE="$f"
+        break
+      fi
+    done
+  fi
+
+  if [ -n "$TRANSCRIPT_FILE" ]; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: extracting decisions from $TRANSCRIPT_FILE" >> "$INGEST_LOG"
+    "$PYTHON" -c "
+import sys, json, logging
+sys.path.insert(0, '.')
+logging.basicConfig(level=logging.INFO)
+from pathlib import Path
+from openexp.ingest.extract_decisions import extract_and_store
+
+result = extract_and_store(
+    transcript_path=Path('$TRANSCRIPT_FILE'),
+    session_id='$SESSION_ID',
+    experience='$EXPERIENCE',
+)
+print(json.dumps(result, default=str))
+" >> "$INGEST_LOG" 2>&1
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: decision extraction finished" >> "$INGEST_LOG"
+  else
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: no transcript found for session $SESSION_SHORT" >> "$INGEST_LOG"
+  fi
 
   # Cleanup session experience file
   "$PYTHON" -c "
