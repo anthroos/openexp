@@ -61,7 +61,7 @@ def ingest_session(
     result = {}
 
     if not sessions_only:
-        obs_result = ingest_observations(max_count=max_count, dry_run=dry_run)
+        obs_result = ingest_observations(max_count=max_count, dry_run=dry_run, experience=experience.name)
         result["observations"] = obs_result
     else:
         result["observations"] = {"skipped": True}
