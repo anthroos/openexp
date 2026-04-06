@@ -307,7 +307,7 @@ class TestResolveOutcomes:
 
         mock_tracker = MagicMock()
         mock_tracker.get_pending_predictions.return_value = [
-            {"id": "pred_abc123", "client_id": "comp-test", "prediction": "SQUAD will close"}
+            {"id": "pred_abc123", "client_id": "comp-test", "prediction": "Deal will close"}
         ]
         mock_tracker.log_outcome.return_value = {"prediction_id": "pred_abc123", "reward": 0.8}
 
