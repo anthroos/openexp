@@ -137,7 +137,7 @@ def compute_session_reward(
 def apply_session_reward(
     point_ids: List[str],
     reward: float,
-    q_cache: QCache | None = None,
+    q_cache: Optional[QCache] = None,
     experience: str = "default",
     reward_context: Optional[str] = None,
     observations: Optional[List[Dict]] = None,
