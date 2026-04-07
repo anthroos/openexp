@@ -347,6 +347,8 @@ def analyze_with_llm(prompt: str) -> Optional[Dict]:
     """
     try:
         env = {**os.environ, "OPENEXP_EXTRACT_RUNNING": "1"}
+        # Remove ANTHROPIC_API_KEY so claude -p uses Max subscription, not API credits
+        env.pop("ANTHROPIC_API_KEY", None)
         result = subprocess.run(
             ["claude", "-p", "--model", "opus"],
             input=prompt,

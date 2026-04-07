@@ -167,6 +167,8 @@ def extract_decisions(
         # --model opus: use Opus 4.6 for highest extraction quality
         # OPENEXP_EXTRACT_RUNNING=1 prevents hook recursion (session-end checks this)
         env = {**os.environ, "OPENEXP_EXTRACT_RUNNING": "1"}
+        # Remove ANTHROPIC_API_KEY so claude -p uses Max subscription, not API credits
+        env.pop("ANTHROPIC_API_KEY", None)
         result = subprocess.run(
             ["claude", "-p", "--model", "opus"],
             input=full_prompt,
