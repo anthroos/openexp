@@ -143,6 +143,19 @@ def _build_explanation_prompt(
             f"\u041f\u043e\u044f\u0441\u043d\u0438 \u0449\u043e \u043e\u0437\u043d\u0430\u0447\u0430\u0454 \u0446\u044f \u043a\u0430\u043b\u0456\u0431\u0440\u0430\u0446\u0456\u044f. 1-2 \u0440\u0435\u0447\u0435\u043d\u043d\u044f."
         )
 
+    elif reward_type in ("daily_retrospective", "weekly_retrospective", "monthly_retrospective"):
+        level = reward_type.replace("_retrospective", "")
+        reason = context.get("reason", "")
+        action = context.get("action", "")
+        return (
+            f"\u0421\u0438\u0441\u0442\u0435\u043c\u0430 Q-learning \u0434\u043b\u044f \u043f\u0430\u043c'\u044f\u0442\u0456 AI-\u0430\u0441\u0438\u0441\u0442\u0435\u043d\u0442\u0430.\n\n"
+            f"\u041d\u043e\u0442\u0430\u0442\u043a\u0438:\n{contents_text}\n"
+            f"{level.title()} \u0440\u0435\u0442\u0440\u043e\u0441\u043f\u0435\u043a\u0442\u0438\u0432\u0430, \u0434\u0456\u044f: {action}\n"
+            f"\u041f\u0440\u0438\u0447\u0438\u043d\u0430: {reason[:200]}\n"
+            f"Reward: {reward:+.2f}{q_line}\n\n"
+            f"\u041f\u043e\u044f\u0441\u043d\u0438 \u0447\u043e\u043c\u0443 \u0446\u044f \u043f\u0430\u043c'\u044f\u0442\u044c \u0431\u0443\u043b\u0430 \u043f\u0435\u0440\u0435\u043e\u0446\u0456\u043d\u0435\u043d\u0430. 2-3 \u0440\u0435\u0447\u0435\u043d\u043d\u044f."
+        )
+
     elif reward_type == "summary":
         total_events = context.get("total_events", 0)
         total_reward = context.get("total_reward", 0)

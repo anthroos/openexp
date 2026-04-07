@@ -580,6 +580,53 @@ def _experience_create_wizard():
         print("Not saved. You can copy the YAML above manually.")
 
 
+def cmd_retrospective(args):
+    """Run multi-level retrospective (daily/weekly/monthly)."""
+    logging.getLogger("openexp").setLevel(logging.INFO)
+
+    from .retrospective import RetroLevel, run_retrospective
+
+    experience = _get_experience_name(args)
+    level = RetroLevel(args.retro_level)
+
+    # Default period
+    if args.period:
+        period = args.period
+    else:
+        from datetime import datetime, timedelta
+        today = datetime.now()
+        if level == RetroLevel.DAILY:
+            period = today.strftime("%Y-%m-%d")
+        elif level == RetroLevel.WEEKLY:
+            period = f"{today.isocalendar()[0]}-W{today.isocalendar()[1]:02d}"
+        elif level == RetroLevel.MONTHLY:
+            # Default to last month
+            last = today.replace(day=1) - timedelta(days=1)
+            period = last.strftime("%Y-%m")
+
+    result = run_retrospective(
+        level=level,
+        period=period,
+        experience=experience,
+        dry_run=args.dry_run,
+    )
+
+    print(json.dumps(result, indent=2, default=str))
+
+    status = result.get("status", "")
+    if status == "completed":
+        adj = result.get("adjustments", {})
+        print(f"\n{level.value.title()} retrospective for {period}: "
+              f"{adj.get('applied', 0)} adjustments applied, "
+              f"{result.get('insights_stored', 0)} insights stored")
+    elif status == "already_done":
+        print(f"\n{level.value.title()} retrospective for {period} already completed.")
+    elif status == "no_data":
+        print(f"\nNo data found for {period}.")
+    elif status == "dry_run":
+        print(f"\n[dry-run] Would analyze: {result.get('data_summary', {})}")
+
+
 def cmd_compact(args):
     """Run memory compaction — merge similar memories into compressed entries."""
     logging.getLogger("openexp").setLevel(logging.INFO)
@@ -727,6 +774,13 @@ def main():
     sp_compact.add_argument("--client-id", default=None, help="Filter by client ID")
     sp_compact.add_argument("--project", default=None, help="Filter by project name")
 
+    # retrospective
+    sp_retro = sub.add_parser("retrospective", help="Run multi-level retrospective")
+    sp_retro.add_argument("retro_level", choices=["daily", "weekly", "monthly"], help="Retrospective level")
+    sp_retro.add_argument("--period", "-p", default=None,
+                          help="Period (YYYY-MM-DD for daily, YYYY-Www for weekly, YYYY-MM for monthly)")
+    sp_retro.add_argument("--dry-run", action="store_true", help="Preview without applying changes")
+
     # viz
     sp_viz = sub.add_parser("viz", help="Generate interactive visualization dashboard")
     sp_viz.add_argument("--output", "-o", default="./openexp-viz.html", help="Output HTML path")
@@ -747,6 +801,8 @@ def main():
         cmd_resolve(args)
     elif args.cmd == "stats":
         cmd_stats(args)
+    elif args.cmd == "retrospective":
+        cmd_retrospective(args)
     elif args.cmd == "compact":
         cmd_compact(args)
     elif args.cmd == "experience":
