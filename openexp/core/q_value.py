@@ -403,6 +403,49 @@ class QValueUpdater:
         self.cache.set(memory_id, q_data, experience)
         return q_data
 
+    def set_q_value(
+        self,
+        memory_id: str,
+        target_q: float,
+        experience: str = "default",
+        reward_context: Optional[str] = None,
+        reward_id: Optional[str] = None,
+    ) -> Dict[str, float]:
+        """Override Q-value to a specific target (for retrospective re-evaluation).
+
+        Computes the delta needed across all layers to reach the target combined Q,
+        then applies it directly (bypassing alpha scaling). Respects floor/ceiling.
+        """
+        q_floor = self.cfg["q_floor"]
+        q_ceiling = self.cfg.get("q_ceiling", 1.0)
+        target_q = max(q_floor, min(q_ceiling, target_q))
+
+        q_data = self.cache.get(memory_id, experience) or self._default_q_data()
+        current_q = self._combined_q(q_data)
+        delta = target_q - current_q
+
+        if abs(delta) < 1e-6:
+            return q_data
+
+        # Apply same delta to all layers (moves combined Q by delta since weights sum to 1)
+        for layer in Q_LAYERS:
+            layer_key = f"q_{layer}"
+            old_val = q_data.get(layer_key, self.cfg["q_init"])
+            new_val = old_val + delta  # same delta to all layers moves combined Q by delta
+            if q_floor is not None:
+                new_val = max(q_floor, new_val)
+            new_val = min(q_ceiling, new_val)
+            q_data[layer_key] = new_val
+
+        q_data["q_value"] = self._combined_q(q_data)
+        q_data["q_visits"] = q_data.get("q_visits", 0) + 1
+        q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
+        ctx = f"[override] {reward_context}" if reward_context else "[override]"
+        _append_reward_context(q_data, ctx, reward_id)
+
+        self.cache.set(memory_id, q_data, experience)
+        return q_data
+
     def batch_update(
         self,
         memory_ids: List[str],
