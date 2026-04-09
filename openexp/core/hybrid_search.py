@@ -16,12 +16,14 @@ DEFAULT_K1 = 1.5
 DEFAULT_B = 0.75
 
 # Default hybrid search weights
+# Q-value weight is 0 until Stage 4 proves the reward loop works.
+# When ready, set w_q_value > 0 and reduce others proportionally.
 DEFAULT_HYBRID_WEIGHTS = {
-    "w_semantic": 0.30,
-    "w_keyword": 0.10,
-    "w_recency": 0.15,
+    "w_semantic": 0.50,
+    "w_keyword": 0.15,
+    "w_recency": 0.20,
     "w_importance": 0.15,
-    "w_q_value": 0.30,
+    "w_q_value": 0.00,
 }
 
 # Status weight multipliers for lifecycle integration
