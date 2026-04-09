@@ -113,11 +113,33 @@ def parse_transcript(transcript_path: Path) -> List[Dict]:
     return messages
 
 
+def _session_already_ingested(client, session_id: str) -> bool:
+    """Check if a session has already been ingested into Qdrant."""
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+    try:
+        result = client.count(
+            collection_name=COLLECTION_NAME,
+            count_filter=Filter(
+                must=[
+                    FieldCondition(key="session_id", match=MatchValue(value=session_id)),
+                    FieldCondition(key="source", match=MatchValue(value="transcript")),
+                ]
+            ),
+            exact=False,  # approximate is fine for existence check
+        )
+        return result.count > 0
+    except Exception as e:
+        logger.warning("Failed to check session existence: %s", e)
+        return False
+
+
 def ingest_transcript(
     transcript_path: Path,
     session_id: str,
     experience: str = "default",
     dry_run: bool = False,
+    force: bool = False,
 ) -> Dict:
     """Full pipeline: parse transcript → embed → store in Qdrant.
 
@@ -127,6 +149,7 @@ def ingest_transcript(
     - role: "user" or "assistant"
     - session_id, timestamp, experience
 
+    Idempotent: skips if session already ingested (unless force=True).
     Returns summary dict.
     """
     messages = parse_transcript(transcript_path)
@@ -142,6 +165,11 @@ def ingest_transcript(
         }
 
     client = _get_qdrant()
+
+    # Idempotency: skip if already ingested
+    if not force and _session_already_ingested(client, session_id):
+        logger.info("Session %s already ingested, skipping", session_id[:8])
+        return {"stored": 0, "reason": "already_ingested", "session_id": session_id}
     stored = 0
     points_batch = []
 
