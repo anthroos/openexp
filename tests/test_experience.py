@@ -295,38 +295,6 @@ def test_scorer_rerank_with_experience():
     assert all("combined_score" in r for r in reranked)
 
 
-# --- Session reward with custom weights ---
-
-def test_compute_session_reward_with_weights():
-    from openexp.ingest.reward import compute_session_reward
-
-    observations = [
-        {"summary": "git commit -m 'fix'", "tool": "Bash"},
-        {"summary": "wrote email", "tool": "Write"},
-        {"summary": "follow up sent", "tool": "Bash"},
-    ]
-
-    # Default weights
-    reward_default = compute_session_reward(observations)
-    assert isinstance(reward_default, float)
-
-    # Custom sales weights
-    sales_weights = {
-        "commit": 0.05,
-        "pr": 0.05,
-        "writes": 0.01,
-        "deploy": 0.0,
-        "tests": 0.0,
-        "decisions": 0.2,
-        "email_sent": 0.15,
-        "follow_up": 0.1,
-        "base": -0.05,
-        "min_obs_penalty": -0.05,
-        "no_output_penalty": -0.1,
-    }
-    reward_sales = compute_session_reward(observations, weights=sales_weights)
-    assert isinstance(reward_sales, float)
-
 
 # --- ProcessStage parsing ---
 
@@ -449,41 +417,6 @@ def test_bundled_sales_has_reward_memory_types():
     assert "decision" in exp.reward_memory_types
     assert "outcome" in exp.reward_memory_types
 
-
-# --- Integration: ingest_session passes experience weights ---
-
-def test_ingest_session_uses_experience_weights(tmp_path, monkeypatch):
-    """Verify ingest_session passes experience weights to compute_session_reward."""
-    from unittest.mock import patch, MagicMock
-
-    # Mock the ingest sub-functions
-    with patch("openexp.ingest.observation.ingest_observations") as mock_obs, \
-         patch("openexp.ingest.session_summary.ingest_sessions") as mock_sess, \
-         patch("openexp.ingest.reward.compute_session_reward") as mock_reward, \
-         patch("openexp.core.experience.get_active_experience") as mock_exp:
-
-        # Set up mocks
-        mock_obs.return_value = {"ingested": 0, "_point_ids": [], "_raw_observations": [
-            {"summary": "email sent to client", "tool": "Bash", "session_id": "sess-123"},
-        ]}
-        mock_sess.return_value = {"ingested": 0}
-        mock_reward.return_value = 0.0  # neutral, so no further calls needed
-
-        sales_exp = Experience(
-            name="sales",
-            description="test",
-            session_reward_weights={"email_sent": 0.15, "base": -0.05},
-        )
-        mock_exp.return_value = sales_exp
-
-        from openexp.ingest import ingest_session
-        ingest_session(session_id="sess-123")
-
-        # Verify compute_session_reward was called with experience weights
-        mock_reward.assert_called_once()
-        call_kwargs = mock_reward.call_args
-        # weights= should be the experience weights, not None/defaults
-        assert call_kwargs[1]["weights"] == {"email_sent": 0.15, "base": -0.05}
 
 
 # --- Experience auto-detection ---

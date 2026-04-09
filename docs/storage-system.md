@@ -3,7 +3,7 @@
 > **Purpose:** This document describes the full storage architecture so that Claude
 > doesn't have to re-read every source file each session. Read THIS instead of the code.
 >
-> **Last updated:** 2026-04-05 (experience routing fix, 250 tests pass)
+> **Last updated:** 2026-04-08 (added Path 5 retrospective, reward audit)
 
 ---
 
@@ -44,7 +44,7 @@ L4 explanation:      "Ця нотатка допомогла бо містила
 
 ---
 
-## 2. Four Reward Paths
+## 2. Five Reward Paths
 
 Each path: reads q_before → updates Q-values → reads q_after → generates L4 explanation → logs L3 record.
 
@@ -54,6 +54,7 @@ Each path: reads q_before → updates Q-values → reads q_after → generates L
 | 2 | **Prediction** | `log_outcome` MCP call | `openexp/reward_tracker.py` → `RewardTracker.log_outcome()` | `"prediction"` |
 | 3 | **Business** | `resolve_outcomes` MCP call | `openexp/outcome.py` → `resolve_outcomes()` | `"business"` |
 | 4 | **Calibration** | `calibrate_experience_q` MCP call | `openexp/mcp_server.py` | `"calibration"` |
+| 5 | **Retrospective** | launchd daily/weekly/monthly | `openexp/retrospective.py` | `"daily_retrospective"` |
 
 ### Path 1: Session Reward (`ingest/reward.py`)
 
@@ -114,6 +115,27 @@ Each path: reads q_before → updates Q-values → reads q_after → generates L
 3. Generate L4 explanation with `reward_type="calibration"`, `q_before=old_q, q_after=new_q`
 4. Log L3 record
 5. Append L2 context: `"Cal 0.80: <reason>"`
+
+### Path 5: Retrospective (`retrospective.py`)
+
+**Trigger:** launchd daily at 23:30, weekly (Sundays), monthly (1st). Also: `openexp retrospective daily [YYYY-MM-DD]` CLI.
+
+**Logic:**
+1. `gather_daily_data()` — collects session summaries, reward events, and memories from Qdrant (source=decision_extraction) for the target date
+2. `analyze_with_llm()` — calls `claude -p --model opus` (Max subscription) with prompt asking for cross-session attribution, over/under-rewarded memories, patterns
+3. LLM returns JSON: `{adjustments[], insights[], summary, patterns[]}`
+4. `apply_adjustments()` — validates memory_id exists in Q-cache (NOT Qdrant), then applies:
+   - `promote`: positive reward via QValueUpdater
+   - `demote`: negative reward via QValueUpdater
+   - `override`: direct Q-value assignment (like calibration)
+5. Max 20 adjustments per run (`MAX_ADJUSTMENTS`)
+6. Saves full Q-cache after adjustments
+7. Stores retrospective summary as a Qdrant memory
+8. Idempotency via `watermark.json` (tracks last processed date per cadence)
+
+**Data stored:** L3 records with `reward_type="daily_retrospective"`, retrospective memory in Qdrant.
+
+**Known issues:** See `docs/reward-audit-2026-04-08.md` for orphan bug (test fixtures in Q-cache) and race condition with calibration path.
 
 ---
 
@@ -221,8 +243,8 @@ Retrieves up to `limit` (default 5) memory texts from Qdrant by ID. Returns `{me
 
 | Function | What | Used by |
 |----------|------|---------|
-| `generate_reward_id()` | `"rwd_<8hex>"` | All 4 paths |
-| `log_reward_event()` | Append record | All 4 paths |
+| `generate_reward_id()` | `"rwd_<8hex>"` | All 5 paths |
+| `log_reward_event()` | Append record | All 5 paths |
 | `get_reward_detail(reward_id)` | Lookup by ID | `reward_detail` MCP tool |
 | `get_reward_history(memory_id)` | All events for a memory | `memory_reward_history`, `explain_q` MCP tools |
 | `compact_observation(obs)` | Strip to id/tool/summary/type/path/tags | Session path (L3 context) |
@@ -395,6 +417,7 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | `reward_tracker.py` | Path 2: Prediction → outcome |
 | `outcome.py` | Path 3: Business events (+ OutcomeResolver ABC) |
 | `mcp_server.py` | Path 4: Calibration (+ all 16 MCP tools) |
+| `retrospective.py` | Path 5: LLM retrospective (daily/weekly/monthly) |
 | `resolvers/crm_csv.py` | CRM CSV diff resolver |
 
 ### Other

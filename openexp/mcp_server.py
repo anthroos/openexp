@@ -608,6 +608,10 @@ def handle_request(request: dict) -> dict:
                 from .core.q_value import _append_reward_context
                 _append_reward_context(q_data, f"Cal {new_q:.2f}: {cal_ctx}", rwd_id)
             q_cache.set(mem_id, q_data, exp_name)
+            # Persist immediately to survive concurrent retrospective runs.
+            # Without this, calibration relied on atexit save_delta() which could
+            # be overwritten by retrospective's full save() running in between.
+            q_cache.save_delta(DELTAS_DIR, SESSION_ID)
 
             result = {
                 "memory_id": mem_id,

@@ -22,6 +22,18 @@ add_memory("the context", type="fact")
 ```
 Immediately. Don't wait. Every piece of context improves future retrieval.
 
+### Prediction loop (build judgment over time):
+When you make a prediction or recommendation (deal outcome, approach success, client reaction):
+```
+log_prediction("prediction text", confidence=0.7, memory_ids=["ids-that-informed-this"])
+```
+Later, when the outcome is known:
+```
+log_outcome(prediction_id="pred_xxx", outcome="what happened", reward=0.8)
+```
+This is how Q-learning builds real judgment — not from heuristics, but from verified outcomes.
+Use for: deal predictions, strategy recommendations, client behavior forecasts, technical approach bets.
+
 ## Architecture
 
 **Full reference:** `docs/storage-system.md` — 5-level pyramid (L0–L4), all 4 reward paths, Q-learning formulas, 16 MCP tools, every file and env var. **Read that instead of re-reading source code.**

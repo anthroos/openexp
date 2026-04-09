@@ -418,6 +418,15 @@ def apply_adjustments(
     skipped = 0
     details = []
 
+    # Validate memories exist in Qdrant (not just Q-cache)
+    qdrant_client = None
+    try:
+        from .core.direct_search import _get_qdrant
+        from .core.config import COLLECTION_NAME
+        qdrant_client = _get_qdrant()
+    except Exception as e:
+        logger.warning("Qdrant unavailable for validation, using Q-cache only: %s", e)
+
     for adj in adjustments[:MAX_ADJUSTMENTS]:
         memory_id = adj.get("memory_id", "")
         action = adj.get("action", "")
@@ -435,6 +444,19 @@ def apply_adjustments(
             logger.warning("Skipping unknown memory_id: %s", memory_id[:12])
             skipped += 1
             continue
+
+        # Validate memory_id exists in Qdrant (prevents orphan rewards)
+        if qdrant_client is not None:
+            try:
+                points = qdrant_client.retrieve(
+                    collection_name=COLLECTION_NAME, ids=[memory_id],
+                )
+                if not points:
+                    logger.warning("Memory %s in Q-cache but not in Qdrant, skipping", memory_id[:12])
+                    skipped += 1
+                    continue
+            except Exception as e:
+                logger.warning("Qdrant check failed for %s: %s", memory_id[:12], e)
 
         q_before = existing.get("q_value", 0.0)
         reward_type = f"{level.value}_retrospective"
