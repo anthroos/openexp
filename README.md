@@ -59,24 +59,32 @@ Existing memory tools (Mem0, Zep, LangMem) add storage — but every memory is e
 
 ## The Solution
 
-OpenExp adds a **closed-loop learning system**:
+OpenExp adds a **closed-loop learning system** with outcome-based rewards:
 
 ```
 Session starts → recall memories (ranked by Q-value)
     ↓
-Agent works → observations captured automatically
+Agent works → observations + decisions captured automatically
     ↓
-Session ends → productive? (commits, PRs, closed deals, resolved tickets)
+Outcomes happen → deal closes, prediction verified, retrospective runs
     ↓
-    YES → reward recalled memories (Q-values go up)
-    NO  → penalize them (Q-values go down)
+    WIN  → memories that contributed get rewarded (Q-values go up)
+    LOSS → memories that misled get penalized (Q-values go down)
     ↓
 Next session → better memories surface first
 ```
 
-### Outcome-Based Rewards
+### Five Reward Paths
 
-Beyond session-level heuristics, OpenExp supports **outcome-based rewards** from real business events. When a CRM deal moves from "negotiation" to "won", the memories tagged with that client get rewarded — even if the deal took weeks to close.
+OpenExp doesn't rely on heuristics. It learns from **real outcomes** through five distinct reward paths:
+
+| Path | Trigger | Example |
+|------|---------|---------|
+| **Prediction** | `log_outcome` resolves a prediction | "Predicted client would accept proposal" → confirmed → +0.8 |
+| **Business** | CRM stage transition detected | Deal moved negotiation → won → +0.8 to tagged memories |
+| **Calibration** | Manual Q-value override | Expert judgment: "this insight was critical" → set q=0.9 |
+| **Retrospective** | Daily LLM analysis (Opus 4.6) | Cross-session patterns: promote undervalued, demote noise |
+| **Decision extraction** | Session end (async) | Opus 4.6 reads transcript, extracts strategic decisions |
 
 ```
 add_memory(content="Acme prefers Google stack", client_id="comp-acme")
@@ -309,7 +317,7 @@ openexp/
 ├── ingest/                     # Observation → Qdrant pipeline
 │   ├── observation.py          # JSONL observations → embeddings → Qdrant
 │   ├── session_summary.py      # Session .md files → memory objects
-│   ├── reward.py               # Session productivity → reward signal
+│   ├── reward.py               # Reward utilities (used by outcome resolvers)
 │   ├── retrieval_log.py        # Closed-loop: which memories were recalled
 │   ├── watermark.py            # Idempotent ingestion tracking
 │   ├── filters.py              # Filter trivial observations
@@ -366,7 +374,7 @@ SessionEnd hook ──→ summary .md                         │
 openexp ingest ──→ FastEmbed ──→ Qdrant ─────────────────┘
       │                            ↑
       ↓                            │
-Q-Cache (q_cache.json) ←── reward signal ←── session productivity
+Q-Cache (q_cache.json) ←── reward signal ←── outcomes (CRM, predictions, retro)
 ```
 
 ## Technical Details
@@ -440,7 +448,7 @@ Detailed docs are available in the [`docs/`](docs/) directory:
 
 - [How It Works](docs/how-it-works.md) — the 4-phase learning cycle
 - [Decision Extraction](docs/decision-extraction.md) — Opus 4.6 extracts decisions, not actions
-- [Storage System](docs/storage-system.md) — 5-level pyramid (L0-L4), all 4 reward paths
+- [Storage System](docs/storage-system.md) — 5-level pyramid (L0-L4), all 5 reward paths
 - [Experiences](docs/experiences.md) — domain-specific reward profiles (create your own)
 - [Architecture](docs/architecture.md) — system design and data flow
 - [Configuration](docs/configuration.md) — all environment variables and options

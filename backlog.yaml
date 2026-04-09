@@ -1,0 +1,307 @@
+project: openexp-v2
+goal: Persistent memory for Claude Code that learns from experience
+created: 2026-04-08
+stage_0_cleanup:
+  name: Cleanup v1 dead code
+  status: IN_PROGRESS
+  tickets:
+  - id: S0-01
+    title: Delete observation pipeline (PostToolUse hook + ingest code)
+    status: DONE
+    description: 'Removed post-tool-use.sh hook, observation.py, filters.py, session_summary.py,
+      reward.py. Removed from settings.local.json.
+
+      '
+    done_at: 2026-04-08
+  - id: S0-02
+    title: Create transcript.py — store full conversations
+    status: DONE
+    description: 'New module openexp/ingest/transcript.py. Parses Claude Code JSONL,
+      embeds user/assistant messages, batch upserts to Qdrant.
+
+      '
+    done_at: 2026-04-08
+  - id: S0-03
+    title: Wire transcript ingest into session-end.sh
+    status: DONE
+    description: 'Added Phase 2d to session-end.sh — calls ingest_transcript() after
+      decision extraction.
+
+      '
+    done_at: 2026-04-08
+  - id: S0-04
+    title: Backfill all historical transcripts
+    status: DONE
+    description: '158 sessions, 13,154 messages ingested into Qdrant. Replaced 284K
+      noise observations with 16K clean conversation data.
+
+      '
+    done_at: 2026-04-08
+  - id: S0-05
+    title: Fix broken tests after cleanup
+    status: DONE
+    description: 'Deleted 3 test files, removed 6 tests from 3 files. 256 passed,
+      0 failed.
+
+      '
+    done_at: 2026-04-08
+  - id: S0-06
+    title: Delete all old observations from Qdrant
+    status: DONE
+    priority: P0
+    description: 'Remove all points where source != "transcript" and type != "decision".
+      Keep only conversation transcripts and extracted decisions. User explicitly
+      asked: "треба всі обзервейшн видалити"
+
+      '
+    done_at: '2026-04-09'
+  - id: S0-07
+    title: Commit and PR all cleanup changes
+    status: IN_PROGRESS
+    priority: P0
+    description: 'Branch cleanup/v2-prep. All changes from S0-01 through S0-05. Run
+      tests, verify, PR, merge.
+
+      '
+stage_1_store:
+  name: Reliable transcript storage
+  status: TODO
+  definition_of_done: 'Every session''s full conversation is stored exactly once in
+    Qdrant. Re-running ingest on the same session is a no-op. CLI can ingest any transcript
+    by path or session ID.
+
+    '
+  tickets:
+  - id: S1-01
+    title: Add idempotency guard to transcript ingest
+    status: TODO
+    priority: P0
+    description: 'Before ingesting, check if session_id already has points in Qdrant.
+      If yes — skip. Prevents duplicates on re-run. Implementation: scroll with filter
+      session_id=X, if count > 0 skip.
+
+      '
+    tests:
+    - test_ingest_same_session_twice_is_noop
+    - test_ingest_new_session_stores_messages
+  - id: S1-02
+    title: Add dedup check for backfill (detect existing duplicates)
+    status: TODO
+    priority: P1
+    description: 'Scan Qdrant for duplicate session_ids. Report count. Optionally
+      delete duplicates keeping newest batch.
+
+      '
+    tests:
+    - test_find_duplicate_sessions
+  - id: S1-03
+    title: Improve transcript parsing — handle edge cases
+    status: TODO
+    priority: P1
+    description: 'Handle: empty messages, very long messages (>5000 chars → chunk),
+      messages with only tool calls (skip), image blocks (skip). Add content-type
+      metadata to each point.
+
+      '
+    tests:
+    - test_parse_empty_message_skipped
+    - test_parse_long_message_chunked
+    - test_parse_tool_only_message_skipped
+  - id: S1-04
+    title: 'CLI: openexp ingest --all (bulk with idempotency)'
+    status: TODO
+    priority: P1
+    description: 'Ingest all transcripts from all project dirs. Skip already-ingested
+      sessions. Show progress bar.
+
+      '
+    tests:
+    - test_cli_ingest_all_skips_existing
+  - id: S1-05
+    title: Add transcript ingest tests
+    status: TODO
+    priority: P0
+    description: 'Unit tests for parse_transcript() and ingest_transcript(). Mock
+      Qdrant client. Test JSONL parsing, system-reminder filtering, message extraction,
+      batch upsert logic.
+
+      '
+    tests:
+    - test_parse_transcript_user_messages
+    - test_parse_transcript_assistant_messages
+    - test_parse_transcript_filters_system_reminders
+    - test_ingest_transcript_batch_upsert
+    - test_ingest_transcript_dry_run
+  - id: S1-06
+    title: Reset Q-cache (all zeros → empty)
+    status: TODO
+    priority: P2
+    description: 'Q-cache has 100K entries all at 0.0, 12MB file. Reset to empty.
+      Q-values will rebuild from v2 reward system.
+
+      '
+stage_2_search:
+  name: Fast, accurate memory retrieval
+  status: TODO
+  definition_of_done: 'search_memory returns relevant conversation fragments. Scoring:
+    vector 50% + BM25 15% + recency 20% + importance 15%. No Q-value in scoring until
+    Stage 4 proves it works. p50 latency < 200ms for top-10 results.
+
+    '
+  tickets:
+  - id: S2-01
+    title: Simplify scoring formula — remove Q-value weight
+    status: TODO
+    priority: P1
+    description: 'Current: vector 30% + BM25 10% + recency 15% + importance 15% +
+      Q 30%. New: vector 50% + BM25 15% + recency 20% + importance 15%. Q-value weight
+      = 0 until Stage 4. Keep Q infrastructure, just zero the weight.
+
+      '
+    tests:
+    - test_scoring_without_q_value
+    - test_scoring_weights_sum_to_1
+  - id: S2-02
+    title: Add conversation-aware search filters
+    status: TODO
+    priority: P1
+    description: 'Filter by: source (transcript/decision), role (user/assistant),
+      date range, project, session_id. All via Qdrant payload filters.
+
+      '
+    tests:
+    - test_search_filter_by_role
+    - test_search_filter_by_date_range
+    - test_search_filter_by_session
+  - id: S2-03
+    title: Benchmark search quality on real queries
+    status: TODO
+    priority: P2
+    description: 'Create 20 test queries with expected results. Measure recall@10
+      and MRR. Baseline for future improvements.
+
+      '
+  - id: S2-04
+    title: Tune BM25 parameters
+    status: TODO
+    priority: P3
+    description: 'Current BM25 uses defaults. Test k1=1.2..2.0 and b=0.5..0.9 on the
+      benchmark set from S2-03.
+
+      '
+stage_3_interface:
+  name: Clean MCP + hooks interface
+  status: TODO
+  definition_of_done: 'MCP server exposes 5 core tools (down from 16). 3 hooks work
+    reliably. No dead code paths.
+
+    '
+  tickets:
+  - id: S3-01
+    title: Reduce MCP tools from 16 to 5 core
+    status: TODO
+    priority: P1
+    description: 'Keep: search_memory, add_memory, log_prediction, log_outcome, memory_stats.
+      Remove or merge the rest (explain_q, calibrate, protect, reload, etc). Less
+      tools = better tool selection by Claude.
+
+      '
+    tests:
+    - test_mcp_server_exposes_5_tools
+    - test_search_memory_tool
+    - test_add_memory_tool
+  - id: S3-02
+    title: Simplify SessionStart hook
+    status: TODO
+    priority: P1
+    description: 'Current hook is complex bash + python. Simplify to: search top-10
+      → format as additionalContext → return. Remove old observation-based logic if
+      any remains.
+
+      '
+    tests:
+    - test_session_start_returns_context
+  - id: S3-03
+    title: Simplify UserPromptSubmit hook
+    status: TODO
+    priority: P2
+    description: 'Search top-5 per user message. Return as REMINDER. Keep it fast
+      (< 500ms).
+
+      '
+  - id: S3-04
+    title: Simplify SessionEnd hook
+    status: TODO
+    priority: P1
+    description: 'Two steps only: (1) ingest transcript, (2) extract decisions. Remove
+      experience detection complexity if possible. Remove session summary generation
+      (transcripts replace it).
+
+      '
+  - id: S3-05
+    title: Add health check endpoint to MCP
+    status: TODO
+    priority: P2
+    description: 'Tool or startup check: verify Qdrant is reachable, collection exists,
+      embedding model loads.
+
+      '
+stage_4_reward:
+  name: Working Q-learning loop
+  status: TODO
+  definition_of_done: 'ONE reward path works end-to-end: prediction → outcome → Q-value
+    update. Q-values actually change from defaults. Search results improve with accumulated
+    rewards.
+
+    '
+  tickets:
+  - id: S4-01
+    title: Implement prediction→outcome reward path
+    status: TODO
+    priority: P1
+    description: 'log_prediction stores prediction with memory_ids. log_outcome matches
+      prediction, computes reward delta, updates Q-values of linked memories. This
+      is the ONLY reward path in v2.
+
+      '
+    tests:
+    - test_prediction_logged_with_memory_ids
+    - test_outcome_updates_q_values
+    - test_prediction_without_outcome_no_change
+  - id: S4-02
+    title: Add Q-value weight back to scoring
+    status: TODO
+    priority: P1
+    description: 'Once predictions prove Q-values move meaningfully, add Q back to
+      scoring. Start with 10% weight, tune up.
+
+      '
+    depends_on: S4-01
+    tests:
+    - test_scoring_with_q_value_weight
+  - id: S4-03
+    title: CRM outcome resolver (optional, if CRM still used)
+    status: TODO
+    priority: P3
+    description: 'Keep crm_csv resolver but as optional plugin. Only wire in if CRM
+      CSVs exist.
+
+      '
+  - id: S4-04
+    title: Q-value decay for stale memories
+    status: TODO
+    priority: P3
+    description: 'Memories not retrieved for 30+ days slowly decay toward 0. Prevents
+      permanently high Q from one lucky prediction.
+
+      '
+    tests:
+    - test_q_decay_after_30_days
+  - id: S4-05
+    title: Reward dashboard / CLI report
+    status: TODO
+    priority: P3
+    description: 'CLI command: openexp stats --rewards Shows: total predictions, resolved
+      %, avg reward, top Q memories.
+
+      '

@@ -147,7 +147,32 @@ class TestSetQValue:
 # Apply adjustments tests
 # ---------------------------------------------------------------------------
 
+def _mock_qdrant_with_ids(valid_ids):
+    """Create a mock Qdrant client that returns points for valid_ids."""
+    from unittest.mock import MagicMock
+    mock_client = MagicMock()
+    def _retrieve(collection_name, ids):
+        result = []
+        for mid in ids:
+            if mid in valid_ids:
+                p = MagicMock()
+                p.id = mid
+                result.append(p)
+        return result
+    mock_client.retrieve.side_effect = _retrieve
+    return mock_client
+
+
 class TestApplyAdjustments:
+    @pytest.fixture(autouse=True)
+    def _mock_qdrant(self):
+        """Mock Qdrant to accept all mem-NNNN test fixture IDs."""
+        from unittest.mock import patch
+        valid = {f"mem-{i:04d}" for i in range(5)}
+        mock = _mock_qdrant_with_ids(valid)
+        with patch("openexp.core.direct_search._get_qdrant", return_value=mock):
+            yield
+
     def test_promote(self, q_cache_with_memories):
         updater = QValueUpdater(cache=q_cache_with_memories)
         adjustments = [
@@ -200,6 +225,37 @@ class TestApplyAdjustments:
         )
         assert result["applied"] == 0
         assert result["skipped"] == 1
+
+    def test_skip_orphan_memory_not_in_qdrant(self, q_cache_with_memories):
+        """Memory exists in Q-cache but NOT in Qdrant — should be skipped."""
+        from unittest.mock import patch
+        # Mock Qdrant to return empty for mem-0001 (simulating orphan)
+        mock = _mock_qdrant_with_ids(set())  # nothing exists in Qdrant
+        with patch("openexp.core.direct_search._get_qdrant", return_value=mock):
+            updater = QValueUpdater(cache=q_cache_with_memories)
+            adjustments = [
+                {"memory_id": "mem-0001", "action": "promote", "reward": 0.3, "reason": "test"},
+            ]
+            result = apply_adjustments(
+                adjustments, RetroLevel.DAILY,
+                q_cache_with_memories, updater,
+            )
+        assert result["applied"] == 0
+        assert result["skipped"] == 1
+
+    def test_qdrant_unavailable_falls_back_to_cache(self, q_cache_with_memories):
+        """If Qdrant is unavailable, fall back to Q-cache-only validation."""
+        from unittest.mock import patch
+        with patch("openexp.core.direct_search._get_qdrant", side_effect=Exception("connection refused")):
+            updater = QValueUpdater(cache=q_cache_with_memories)
+            adjustments = [
+                {"memory_id": "mem-0001", "action": "promote", "reward": 0.3, "reason": "test"},
+            ]
+            result = apply_adjustments(
+                adjustments, RetroLevel.DAILY,
+                q_cache_with_memories, updater,
+            )
+        assert result["applied"] == 1  # should still work via Q-cache
 
     def test_max_adjustments_cap(self, q_cache_with_memories):
         updater = QValueUpdater(cache=q_cache_with_memories)

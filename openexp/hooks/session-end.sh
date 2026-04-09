@@ -164,77 +164,7 @@ print(d.get('experience',''))
     [ -n "$PROJECT_EXP" ] && EXPERIENCE="$PROJECT_EXP"
   fi
   export OPENEXP_EXPERIENCE="$EXPERIENCE"
-  # Phase 2a: Full ingest + session reward (ingests ALL pending obs, rewards THIS session)
-  "$PYTHON" -m openexp.cli ingest --session-id "$OPENEXP_SESSION_ID_PHASE2" >> "$INGEST_LOG" 2>&1
-  EXIT_CODE=$?
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: ingest finished (exit=$EXIT_CODE)" >> "$INGEST_LOG"
-
-  # Phase 2b: Fallback reward — if obs were already ingested (by launchd or prior session),
-  # raw_obs was empty and reward didn't fire above. Read obs from JSONL directly.
-  # Guard: skip if reward was already applied for this session (idempotency).
-  "$PYTHON" -c "
-import json, sys, os, logging
-from pathlib import Path
-
-logging.basicConfig(level=logging.INFO)
-session_id = os.environ['OPENEXP_SESSION_ID_PHASE2']
-data_dir = Path.home() / '.openexp' / 'data'
-reward_log = data_dir / 'reward_log.jsonl'
-
-# Check if reward already applied for this session
-if reward_log.exists():
-    for line in reward_log.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        ctx = entry.get('context', {})
-        if isinstance(ctx, dict) and session_id in ctx.get('session_id', ''):
-            print(f'Reward already applied for session {session_id[:8]}, skipping fallback')
-            sys.exit(0)
-
-# No reward yet — read observations from JSONL and compute
-from openexp.ingest.reward import compute_session_reward, reward_retrieved_memories, _build_session_reward_context
-from openexp.core.experience import get_active_experience
-
-obs_dir = Path.home() / '.openexp' / 'observations'
-session_obs = []
-for f in sorted(obs_dir.glob('observations-*.jsonl')):
-    for line in f.read_text().splitlines():
-        if not line.strip():
-            continue
-        try:
-            obs = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        sid = obs.get('session_id', '')
-        if session_id in sid or sid.startswith(session_id[:8]):
-            session_obs.append(obs)
-
-if not session_obs:
-    print(f'No observations found for session {session_id[:8]}')
-    sys.exit(0)
-
-experience = get_active_experience()
-reward = compute_session_reward(session_obs, weights=experience.session_reward_weights)
-if reward == 0.0:
-    print(f'Session {session_id[:8]}: neutral reward, skipping')
-    sys.exit(0)
-
-reward_ctx = _build_session_reward_context(session_obs, reward)
-updated = reward_retrieved_memories(
-    session_id, reward,
-    experience=experience.name,
-    reward_context=reward_ctx,
-    reward_memory_types=experience.reward_memory_types,
-)
-print(f'Fallback reward={reward:.2f} applied to {updated} retrieved memories ({len(session_obs)} obs)')
-" >> "$INGEST_LOG" 2>&1
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: fallback reward finished" >> "$INGEST_LOG"
-
-  # Phase 2c: Decision extraction from transcript (Opus 4.6)
+  # Phase 2a: Decision extraction from transcript (Opus 4.6)
   # This is the most valuable step — extracts DECISIONS, not actions.
   # Discover transcript dir dynamically: ~/.claude/projects/ contains project dirs
   TRANSCRIPT_FILE=""
@@ -284,6 +214,24 @@ result = extract_and_store(
 print(json.dumps(result, default=str))
 " >> "$INGEST_LOG" 2>&1
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: decision extraction finished" >> "$INGEST_LOG"
+
+    # Phase 2d: Ingest FULL transcript into Qdrant (every user + assistant message)
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: ingesting full transcript for session $SESSION_SHORT" >> "$INGEST_LOG"
+    "$PYTHON" -c "
+import sys, json, os, logging
+sys.path.insert(0, '.')
+logging.basicConfig(level=logging.INFO)
+from pathlib import Path
+from openexp.ingest.transcript import ingest_transcript
+
+result = ingest_transcript(
+    transcript_path=Path(os.environ['OPENEXP_TRANSCRIPT_FILE']),
+    session_id=os.environ['OPENEXP_SESSION_ID_PHASE2'],
+    experience=os.environ['OPENEXP_EXPERIENCE_PHASE2'],
+)
+print(json.dumps(result, default=str))
+" >> "$INGEST_LOG" 2>&1
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: transcript ingest finished" >> "$INGEST_LOG"
   else
     echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: no transcript found for session $SESSION_SHORT" >> "$INGEST_LOG"
   fi

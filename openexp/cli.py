@@ -67,29 +67,62 @@ def cmd_search(args):
 
 
 def cmd_ingest(args):
-    """Ingest observations and session summaries into Qdrant."""
+    """Ingest transcripts into Qdrant."""
     if not args.dry_run:
         logging.getLogger("openexp.ingest").setLevel(logging.INFO)
 
-    from .ingest import ingest_session
+    from pathlib import Path
+    from .ingest.transcript import ingest_transcript
+    from .core.experience import get_active_experience
 
-    result = ingest_session(
-        max_count=args.max,
-        dry_run=args.dry_run,
-        sessions_only=args.sessions_only,
-        session_id=args.session_id,
-    )
+    experience = get_active_experience()
+
+    # Find transcripts to ingest
+    projects_dir = Path.home() / ".claude" / "projects"
+    if args.session_id:
+        # Ingest specific session
+        transcript = None
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            candidate = project_dir / f"{args.session_id}.jsonl"
+            if candidate.exists():
+                transcript = candidate
+                break
+        if not transcript:
+            print(f"Transcript not found for session {args.session_id}", file=sys.stderr)
+            sys.exit(1)
+        result = ingest_transcript(
+            transcript_path=transcript,
+            session_id=args.session_id,
+            experience=experience.name,
+            dry_run=args.dry_run,
+        )
+    else:
+        # Ingest all un-ingested transcripts from main project
+        main_dir = projects_dir / "-Users-ivanpasichnyk"
+        if not main_dir.exists():
+            print("No transcripts found", file=sys.stderr)
+            sys.exit(1)
+        transcripts = sorted(main_dir.glob("*.jsonl"))
+        result = {"stored": 0, "user_messages": 0, "assistant_messages": 0, "files": len(transcripts)}
+        for t in transcripts:
+            r = ingest_transcript(
+                transcript_path=t,
+                session_id=t.stem,
+                experience=experience.name,
+                dry_run=args.dry_run,
+            )
+            result["stored"] += r.get("stored", 0)
+            result["user_messages"] += r.get("user_messages", 0)
+            result["assistant_messages"] += r.get("assistant_messages", 0)
 
     print(json.dumps(result, indent=2, default=str))
-
-    obs = result.get("observations", {})
-    sess = result.get("sessions", {})
     if args.dry_run:
-        print(f"\n[dry-run] Would ingest: {obs.get('would_ingest', 0)} observations, "
-              f"{sess.get('would_ingest', 0)} sessions")
+        print(f"\n[dry-run] Would ingest: {result.get('parsed', result.get('stored', 0))} messages")
     else:
-        print(f"\nIngested: {obs.get('ingested', 0)} observations, "
-              f"{sess.get('ingested', 0)} sessions")
+        print(f"\nIngested: {result.get('stored', 0)} messages "
+              f"({result.get('user_messages', 0)} user, {result.get('assistant_messages', 0)} assistant)")
 
 
 def cmd_log_retrieval(args):
@@ -741,11 +774,9 @@ def main():
     )
 
     # ingest
-    sp_ingest = sub.add_parser("ingest", help="Ingest observations into Qdrant")
+    sp_ingest = sub.add_parser("ingest", help="Ingest transcripts into Qdrant")
     sp_ingest.add_argument("--dry-run", action="store_true", help="Preview without writing")
-    sp_ingest.add_argument("--max", type=int, default=0, help="Max observations to ingest (0=all)")
-    sp_ingest.add_argument("--sessions-only", action="store_true", help="Only ingest session summaries")
-    sp_ingest.add_argument("--session-id", default=None, help="Session ID for retrieval reward")
+    sp_ingest.add_argument("--session-id", default=None, help="Specific session ID to ingest")
 
     # log-retrieval
     sp_log = sub.add_parser("log-retrieval", help="Log retrieved memory IDs for a session")
