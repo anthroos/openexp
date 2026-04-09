@@ -60,3 +60,15 @@ def test_prepare_corpus_stats():
 def test_prepare_corpus_stats_empty():
     stats = prepare_corpus_stats([])
     assert stats["avgdl"] == 0
+
+
+def test_default_weights_sum_to_1():
+    from openexp.core.hybrid_search import DEFAULT_HYBRID_WEIGHTS
+    total = sum(DEFAULT_HYBRID_WEIGHTS.values())
+    assert abs(total - 1.0) < 1e-9, f"Weights sum to {total}, expected 1.0"
+
+
+def test_q_value_weight_is_zero():
+    """Q-value weight disabled until Stage 4."""
+    from openexp.core.hybrid_search import DEFAULT_HYBRID_WEIGHTS
+    assert DEFAULT_HYBRID_WEIGHTS["w_q_value"] == 0.0
