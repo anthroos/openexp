@@ -76,11 +76,12 @@ def cmd_ingest(args):
     from .core.experience import get_active_experience
 
     experience = get_active_experience()
+    force = getattr(args, "force", False)
 
     # Find transcripts to ingest
     projects_dir = Path.home() / ".claude" / "projects"
     if args.session_id:
-        # Ingest specific session
+        # Ingest specific session — search across all project dirs
         transcript = None
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():
@@ -97,32 +98,52 @@ def cmd_ingest(args):
             session_id=args.session_id,
             experience=experience.name,
             dry_run=args.dry_run,
+            force=force,
         )
     else:
-        # Ingest all un-ingested transcripts from main project
-        main_dir = projects_dir / "-Users-ivanpasichnyk"
-        if not main_dir.exists():
+        # Bulk ingest: --all scans all project dirs, default scans main only
+        if getattr(args, "all", False):
+            dirs = [d for d in projects_dir.iterdir() if d.is_dir()]
+        else:
+            main_dir = projects_dir / "-Users-ivanpasichnyk"
+            dirs = [main_dir] if main_dir.exists() else []
+
+        if not dirs:
             print("No transcripts found", file=sys.stderr)
             sys.exit(1)
-        transcripts = sorted(main_dir.glob("*.jsonl"))
-        result = {"stored": 0, "user_messages": 0, "assistant_messages": 0, "files": len(transcripts)}
-        for t in transcripts:
+
+        transcripts = []
+        for d in dirs:
+            transcripts.extend(sorted(d.glob("*.jsonl")))
+
+        result = {"stored": 0, "skipped": 0, "user_messages": 0, "assistant_messages": 0, "files": len(transcripts)}
+        for i, t in enumerate(transcripts, 1):
+            if not args.dry_run:
+                print(f"\r  [{i}/{len(transcripts)}] {t.stem[:8]}...", end="", flush=True)
             r = ingest_transcript(
                 transcript_path=t,
                 session_id=t.stem,
                 experience=experience.name,
                 dry_run=args.dry_run,
+                force=force,
             )
-            result["stored"] += r.get("stored", 0)
-            result["user_messages"] += r.get("user_messages", 0)
-            result["assistant_messages"] += r.get("assistant_messages", 0)
+            if r.get("reason") == "already_ingested":
+                result["skipped"] += 1
+            else:
+                result["stored"] += r.get("stored", 0)
+                result["user_messages"] += r.get("user_messages", 0)
+                result["assistant_messages"] += r.get("assistant_messages", 0)
+        if not args.dry_run:
+            print()  # newline after progress
 
     print(json.dumps(result, indent=2, default=str))
     if args.dry_run:
         print(f"\n[dry-run] Would ingest: {result.get('parsed', result.get('stored', 0))} messages")
     else:
+        skipped = result.get("skipped", 0)
+        skip_msg = f", {skipped} skipped (already ingested)" if skipped else ""
         print(f"\nIngested: {result.get('stored', 0)} messages "
-              f"({result.get('user_messages', 0)} user, {result.get('assistant_messages', 0)} assistant)")
+              f"({result.get('user_messages', 0)} user, {result.get('assistant_messages', 0)} assistant){skip_msg}")
 
 
 def cmd_log_retrieval(args):
@@ -777,6 +798,8 @@ def main():
     sp_ingest = sub.add_parser("ingest", help="Ingest transcripts into Qdrant")
     sp_ingest.add_argument("--dry-run", action="store_true", help="Preview without writing")
     sp_ingest.add_argument("--session-id", default=None, help="Specific session ID to ingest")
+    sp_ingest.add_argument("--all", action="store_true", help="Scan all project dirs (not just main)")
+    sp_ingest.add_argument("--force", action="store_true", help="Re-ingest even if already stored")
 
     # log-retrieval
     sp_log = sub.add_parser("log-retrieval", help="Log retrieved memory IDs for a session")
