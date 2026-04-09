@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from fastembed import TextEmbedding
 from qdrant_client import QdrantClient
-from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
+from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct, Range
 
 from .config import (
     QDRANT_HOST,
@@ -68,14 +68,25 @@ def search_memories(
     include_deleted: bool = False,
     q_cache: Optional[QCache] = None,
     experience: str = "default",
+    role: Optional[str] = None,
+    session_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Search memories via direct Qdrant + FastEmbed.
 
     1. Embed query with FastEmbed
-    2. Search Qdrant
+    2. Search Qdrant with filters
     3. Apply lifecycle filter
     4. Apply hybrid scoring (BM25 + Q-value reranking)
     5. Return results
+
+    Filters:
+        role: "user" or "assistant" (conversation messages only)
+        session_id: filter by session
+        date_from/date_to: ISO date strings for date range (on created_at)
+        source: "transcript" or "decision" etc.
     """
     qc = _get_qdrant()
     query_vector = _embed(query)
@@ -97,6 +108,27 @@ def search_memories(
     if client_id:
         must_conditions.append(
             FieldCondition(key="metadata.client_id", match=MatchValue(value=client_id))
+        )
+    if role:
+        must_conditions.append(
+            FieldCondition(key="role", match=MatchValue(value=role))
+        )
+    if session_id:
+        must_conditions.append(
+            FieldCondition(key="session_id", match=MatchValue(value=session_id))
+        )
+    if source:
+        must_conditions.append(
+            FieldCondition(key="source", match=MatchValue(value=source))
+        )
+    if date_from or date_to:
+        range_kwargs = {}
+        if date_from:
+            range_kwargs["gte"] = date_from
+        if date_to:
+            range_kwargs["lte"] = date_to
+        must_conditions.append(
+            FieldCondition(key="created_at", range=Range(**range_kwargs))
         )
 
     qdrant_filter = None
