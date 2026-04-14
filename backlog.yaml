@@ -3,7 +3,7 @@ goal: Persistent memory for Claude Code that learns from experience
 created: 2026-04-08
 stage_0_cleanup:
   name: Cleanup v1 dead code
-  status: IN_PROGRESS
+  status: DONE
   tickets:
   - id: S0-01
     title: Delete observation pipeline (PostToolUse hook + ingest code)
@@ -57,15 +57,16 @@ stage_0_cleanup:
     done_at: '2026-04-09'
   - id: S0-07
     title: Commit and PR all cleanup changes
-    status: IN_PROGRESS
+    status: DONE
     priority: P0
     description: 'Branch cleanup/v2-prep. All changes from S0-01 through S0-05. Run
       tests, verify, PR, merge.
 
       '
+    done_at: '2026-04-09'
 stage_1_store:
   name: Reliable transcript storage
-  status: TODO
+  status: DONE
   definition_of_done: 'Every session''s full conversation is stored exactly once in
     Qdrant. Re-running ingest on the same session is a no-op. CLI can ingest any transcript
     by path or session ID.
@@ -74,7 +75,7 @@ stage_1_store:
   tickets:
   - id: S1-01
     title: Add idempotency guard to transcript ingest
-    status: TODO
+    status: DONE
     priority: P0
     description: 'Before ingesting, check if session_id already has points in Qdrant.
       If yes — skip. Prevents duplicates on re-run. Implementation: scroll with filter
@@ -84,9 +85,10 @@ stage_1_store:
     tests:
     - test_ingest_same_session_twice_is_noop
     - test_ingest_new_session_stores_messages
+    done_at: '2026-04-09'
   - id: S1-02
     title: Add dedup check for backfill (detect existing duplicates)
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Scan Qdrant for duplicate session_ids. Report count. Optionally
       delete duplicates keeping newest batch.
@@ -94,9 +96,10 @@ stage_1_store:
       '
     tests:
     - test_find_duplicate_sessions
+    done_at: '2026-04-09'
   - id: S1-03
     title: Improve transcript parsing — handle edge cases
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Handle: empty messages, very long messages (>5000 chars → chunk),
       messages with only tool calls (skip), image blocks (skip). Add content-type
@@ -107,9 +110,10 @@ stage_1_store:
     - test_parse_empty_message_skipped
     - test_parse_long_message_chunked
     - test_parse_tool_only_message_skipped
+    done_at: '2026-04-09'
   - id: S1-04
     title: 'CLI: openexp ingest --all (bulk with idempotency)'
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Ingest all transcripts from all project dirs. Skip already-ingested
       sessions. Show progress bar.
@@ -117,9 +121,10 @@ stage_1_store:
       '
     tests:
     - test_cli_ingest_all_skips_existing
+    done_at: '2026-04-09'
   - id: S1-05
     title: Add transcript ingest tests
-    status: TODO
+    status: DONE
     priority: P0
     description: 'Unit tests for parse_transcript() and ingest_transcript(). Mock
       Qdrant client. Test JSONL parsing, system-reminder filtering, message extraction,
@@ -132,17 +137,19 @@ stage_1_store:
     - test_parse_transcript_filters_system_reminders
     - test_ingest_transcript_batch_upsert
     - test_ingest_transcript_dry_run
+    done_at: '2026-04-09'
   - id: S1-06
     title: Reset Q-cache (all zeros → empty)
-    status: TODO
+    status: DONE
     priority: P2
     description: 'Q-cache has 100K entries all at 0.0, 12MB file. Reset to empty.
       Q-values will rebuild from v2 reward system.
 
       '
+    done_at: '2026-04-09'
 stage_2_search:
   name: Fast, accurate memory retrieval
-  status: TODO
+  status: IN_PROGRESS
   definition_of_done: 'search_memory returns relevant conversation fragments. Scoring:
     vector 50% + BM25 15% + recency 20% + importance 15%. No Q-value in scoring until
     Stage 4 proves it works. p50 latency < 200ms for top-10 results.
@@ -151,7 +158,7 @@ stage_2_search:
   tickets:
   - id: S2-01
     title: Simplify scoring formula — remove Q-value weight
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Current: vector 30% + BM25 10% + recency 15% + importance 15% +
       Q 30%. New: vector 50% + BM25 15% + recency 20% + importance 15%. Q-value weight
@@ -161,9 +168,10 @@ stage_2_search:
     tests:
     - test_scoring_without_q_value
     - test_scoring_weights_sum_to_1
+    done_at: '2026-04-09'
   - id: S2-02
     title: Add conversation-aware search filters
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Filter by: source (transcript/decision), role (user/assistant),
       date range, project, session_id. All via Qdrant payload filters.
@@ -173,6 +181,7 @@ stage_2_search:
     - test_search_filter_by_role
     - test_search_filter_by_date_range
     - test_search_filter_by_session
+    done_at: '2026-04-09'
   - id: S2-03
     title: Benchmark search quality on real queries
     status: TODO
@@ -190,62 +199,87 @@ stage_2_search:
 
       '
 stage_3_interface:
-  name: Clean MCP + hooks interface
-  status: TODO
-  definition_of_done: 'MCP server exposes 5 core tools (down from 16). 3 hooks work
-    reliably. No dead code paths.
+  name: 'Hippocampus model: write everything, retrieve on demand'
+  status: DONE
+  definition_of_done: 'Write path: every session auto-ingested (SessionEnd hook).
+    Read path: /recall skill for on-demand retrieval. MCP: 3 core tools (search, add,
+    stats) + 2 reward (predict, outcome). No auto-injection on every message (UserPromptSubmit
+    removed).
 
     '
   tickets:
   - id: S3-01
-    title: Reduce MCP tools from 16 to 5 core
-    status: TODO
-    priority: P1
-    description: 'Keep: search_memory, add_memory, log_prediction, log_outcome, memory_stats.
-      Remove or merge the rest (explain_q, calibrate, protect, reload, etc). Less
-      tools = better tool selection by Claude.
-
-      '
+    title: Reduce MCP tools to 5 (hippocampus model)
+    status: DONE
+    priority: P0
+    description: "NEW MODEL: Write everything automatically, retrieve on demand.\n\
+      Keep 5 tools:\n  search_memory — core retrieval (used by /recall skill and hooks)\n\
+      \  add_memory — explicit memory capture (decisions, facts)\n  memory_stats —\
+      \ system health check\n  log_prediction — reward loop input\n  log_outcome —\
+      \ reward loop output\n\nRemove 11 tools: explain_q, calibrate_experience_q,\
+      \ protect_memory, reload_q_cache, resolve_outcomes, experience_info, experience_insights,\
+      \ experience_top_memories, reflect, memory_reward_history, reward_detail.\n\
+      Also remove get_agent_context (dead).\n"
     tests:
-    - test_mcp_server_exposes_5_tools
-    - test_search_memory_tool
-    - test_add_memory_tool
+    - test_mcp_lists_exactly_5_tools
+    - test_each_tool_responds
+    done_at: '2026-04-13'
   - id: S3-02
     title: Simplify SessionStart hook
-    status: TODO
+    status: DONE
     priority: P1
-    description: 'Current hook is complex bash + python. Simplify to: search top-10
-      → format as additionalContext → return. Remove old observation-based logic if
-      any remains.
+    description: 'Simplified to: search top-10 → format as additionalContext → return.
 
       '
-    tests:
-    - test_session_start_returns_context
+    done_at: '2026-04-09'
   - id: S3-03
-    title: Simplify UserPromptSubmit hook
-    status: TODO
-    priority: P2
-    description: 'Search top-5 per user message. Return as REMINDER. Keep it fast
-      (< 500ms).
+    title: Remove UserPromptSubmit hook (hippocampus model)
+    status: DONE
+    priority: P0
+    description: 'OLD: search top-5 on EVERY user message, inject as REMINDER. Problem:
+      noise, slow, fills context with low-relevance results.
+
+      NEW: No auto-recall per message. Retrieval is on-demand via /recall. SessionStart
+      still injects broad context at session start.
+
+      Action: remove UserPromptSubmit hook from settings.local.json. Keep the script
+      file for reference but deactivate the hook.
 
       '
+    done_at: '2026-04-13'
   - id: S3-04
     title: Simplify SessionEnd hook
-    status: TODO
+    status: DONE
     priority: P1
-    description: 'Two steps only: (1) ingest transcript, (2) extract decisions. Remove
-      experience detection complexity if possible. Remove session summary generation
-      (transcripts replace it).
+    description: 'Two steps: (1) extract decisions, (2) ingest transcript. This is
+      the WRITE path — runs automatically on every session end.
 
       '
-  - id: S3-05
-    title: Add health check endpoint to MCP
+    done_at: '2026-04-09'
+  - id: S3-06
+    title: Create /recall skill — on-demand hippocampus retrieval
+    status: TODO
+    priority: P0
+    description: "The KEY new piece. A Claude Code skill that:\nUser says: /recall\
+      \ SQUAD contract Skill does:\n  1. search_memory(\"SQUAD contract\", limit=20)\n\
+      \  2. Group results by session/date\n  3. Format as structured context with\
+      \ scores\n  4. Return to Claude for reasoning\n\nUser says: /recall --session\
+      \ abc123 Skill does: retrieve all messages from that session\nUser says: /recall\
+      \ --last-week pipeline decisions Skill does: search with date_from filter, type=decision\n\
+      SKILL.md frontmatter:\n  name: recall\n  description: Search hippocampus memory\
+      \ on demand\n  user_invocable: true\n  arguments: query text + optional flags\n\
+      \nImplementation: ~/claude-skills/skills/recall/SKILL.md Update dispatcher routing\
+      \ table.\n"
+  - id: S3-07
+    title: Decide SessionStart hook fate (keep vs remove)
     status: TODO
     priority: P2
-    description: 'Tool or startup check: verify Qdrant is reachable, collection exists,
-      embedding model loads.
-
-      '
+    description: "With /recall available, do we still need SessionStart auto-injection?\n\
+      Arguments FOR keeping:\n  - Gives baseline context without user asking\n  -\
+      \ Cheap (one search at session start)\n\nArguments AGAINST:\n  - May inject\
+      \ irrelevant context\n  - /recall is more targeted\n\nDecision: keep for now\
+      \ but make it opt-out via .openexp.yaml. Revisit after /recall is used for 2\
+      \ weeks.\n"
 stage_4_reward:
   name: Working Q-learning loop
   status: TODO
@@ -270,7 +304,7 @@ stage_4_reward:
     - test_prediction_without_outcome_no_change
   - id: S4-02
     title: Add Q-value weight back to scoring
-    status: TODO
+    status: DONE
     priority: P1
     description: 'Once predictions prove Q-values move meaningfully, add Q back to
       scoring. Start with 10% weight, tune up.
@@ -279,6 +313,7 @@ stage_4_reward:
     depends_on: S4-01
     tests:
     - test_scoring_with_q_value_weight
+    done_at: '2026-04-13'
   - id: S4-03
     title: CRM outcome resolver (optional, if CRM still used)
     status: TODO
@@ -303,5 +338,103 @@ stage_4_reward:
     priority: P3
     description: 'CLI command: openexp stats --rewards Shows: total predictions, resolved
       %, avg reward, top Q memories.
+
+      '
+stage_5_experience_library:
+  name: Experience Library — structured experience from conversation data
+  status: DONE
+  definition_of_done: 'Full pipeline: chunk → topics → threads → experience labels → Qdrant.
+    269 experience labels across 35 threads. Searchable via search_memory(type="experience").
+    Skills /experience and /label-thread working.
+
+    '
+  done_at: '2026-04-14'
+  tickets:
+  - id: S5-01
+    title: Chunking pipeline
+    status: DONE
+    description: 'Fetch all transcripts from Qdrant, group by session, sort chronologically,
+      split into ~200K token chunks. Output: 18 chunks from 156 sessions.
+
+      '
+    done_at: '2026-04-13'
+  - id: S5-02
+    title: Topic extraction per chunk
+    status: DONE
+    description: 'Opus extracts topics per chunk. 170 topics across 18 chunks.
+
+      '
+    done_at: '2026-04-13'
+  - id: S5-03
+    title: Thread grouping across chunks
+    status: DONE
+    description: 'Opus groups 170 topics into 36 work threads spanning multiple chunks.
+
+      '
+    done_at: '2026-04-14'
+  - id: S5-04
+    title: Experience labeling (pilot — МПУВ thread)
+    status: DONE
+    description: 'Validated the approach on thread #4 (МПУВ). 19 timeline events, 8
+      experience labels in context→actions→outcome format.
+
+      '
+    done_at: '2026-04-14'
+  - id: S5-05
+    title: add_experience() in Qdrant
+    status: DONE
+    description: 'Store experience labels in Qdrant with search-optimized embedding
+      (situation + insight + applies_when). type="experience", source="experience_library".
+
+      '
+    done_at: '2026-04-14'
+  - id: S5-06
+    title: Batch label all 36 threads
+    status: DONE
+    description: '269 unique experience labels across 35 threads (1 low_data skip).
+      All stored in Qdrant. Smoke tests pass for all 5 categories.
+
+      '
+    done_at: '2026-04-14'
+  - id: S5-07
+    title: /experience skill — retrieve past experience
+    status: DONE
+    description: 'Skill searches Qdrant for type="experience", formats advice.
+
+      '
+    done_at: '2026-04-14'
+  - id: S5-08
+    title: /label-thread skill — repeatable labeling
+    status: DONE
+    description: '7-step process encoded as skill. Tested on Mercury thread.
+
+      '
+    done_at: '2026-04-14'
+stage_6_next:
+  name: Experience Library — adoption and integration
+  status: TODO
+  tickets:
+  - id: S6-01
+    title: Auto-experience in SessionStart hook
+    status: TODO
+    priority: P1
+    description: 'Search type="experience" on each session start. Inject top 3 relevant
+      experiences into context alongside regular memories.
+
+      '
+  - id: S6-02
+    title: Experience compression via compresr.ai
+    status: TODO
+    priority: P2
+    description: 'Compress all 269 experience labels to fit in context window. Partnership
+      with Ivan Zakazov (YC W26).
+
+      '
+  - id: S6-03
+    title: LoRA training data export
+    status: TODO
+    priority: P3
+    description: 'Export experience labels as training pairs for LoRA fine-tuning.
+      Format: instruction (situation) → response (actions + reasoning).
 
       '

@@ -98,6 +98,54 @@ resolve_outcomes → finds memories tagged comp-acme → reward +0.8
 
 After a few sessions, OpenExp learns what context actually helps you get work done.
 
+## Experience Library
+
+Memories capture individual moments. The Experience Library captures **entire journeys** — from first contact to final outcome — and distills them into reusable lessons.
+
+```
+Raw conversations (26K messages)
+    ↓ chunk into ~200K token batches
+18 chunks
+    ↓ Opus extracts topics per chunk
+170 topics
+    ↓ group across chunks by work thread
+36 threads (e.g., "SQUAD HR AI Bot Deal", "МПУВ Document Automation")
+    ↓ Opus labels each thread
+269 experience labels (context → actions → outcome → lesson)
+    ↓ stored in Qdrant as type="experience"
+Searchable via search_memory
+```
+
+Each experience label is a structured training triplet:
+
+```json
+{
+  "context": {
+    "situation": "Client needs automated report generation from 40-page template",
+    "constraints": ["Non-technical operators", "14 communities"],
+    "stakeholders": ["Igor Bespalov (client)", "Ivan (builder)"]
+  },
+  "actions": [
+    {"what": "Built 7-stage pipeline with --auto flag", "why": "Remove human bottleneck"}
+  ],
+  "outcome": {
+    "result": "Pipeline generates documents end-to-end, demo successful",
+    "success": true
+  },
+  "lesson": {
+    "insight": "When human is bottleneck, make the agent the worker — give it tools + DoD",
+    "applies_when": "Manual data entry is blocking a pipeline that otherwise works"
+  }
+}
+```
+
+When a new situation arises, `search_memory` finds relevant experiences by matching the **situation**, not keywords — so "document automation client" finds lessons from a Ukrainian waste management project because the *pattern* matches.
+
+**Three levels of use:**
+1. **Now:** Experience layer as system prompt — skill queries Qdrant, formats advice
+2. **Soon:** Compress with [compresr.ai](https://compresr.ai) to fit all 269 labels in context
+3. **Later:** LoRA fine-tune on labeled data (context→actions→outcome format)
+
 ## Why OpenExp?
 
 | Feature | OpenExp | Mem0 | Zep/Graphiti | LangMem |
@@ -216,31 +264,15 @@ With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to 
 
 ## MCP Tools
 
-**Core — memory operations:**
+Five focused tools (hippocampus model — write everything, retrieve selectively):
 
 | Tool | Description |
 |------|-------------|
-| `search_memory` | Hybrid search: BM25 + vector + Q-value reranking |
+| `search_memory` | Hybrid search: BM25 + vector + recency + importance + Q-value reranking. Filter by type (e.g., `type="experience"` for experience labels) |
 | `add_memory` | Store memory with auto-enrichment (type, tags, validity). Supports `client_id` for entity tagging |
 | `log_prediction` | Track a prediction for later outcome resolution |
 | `log_outcome` | Resolve prediction with reward → updates Q-values |
-| `get_agent_context` | Full context: memories + pending predictions |
-| `resolve_outcomes` | Run outcome resolvers (CRM stage changes → targeted rewards) |
-| `reflect` | Review recent memories for patterns |
-| `memory_stats` | Q-cache size, prediction accuracy stats |
-| `reload_q_cache` | Hot-reload Q-values from disk |
-
-**Introspection — understand why memories rank the way they do:**
-
-| Tool | Description |
-|------|-------------|
-| `experience_info` | Active experience config (weights, resolvers, boosts) |
-| `experience_top_memories` | Top or bottom N memories by Q-value |
-| `experience_insights` | Reward distribution, learning velocity, valuable memory types |
-| `calibrate_experience_q` | Manually set Q-value for a memory with reason |
-| `memory_reward_history` | Full reward trail: Q-value changes, contexts (L2), cold storage (L3) |
-| `reward_detail` | Complete L3 cold storage record for a reward event |
-| `explain_q` | Human-readable LLM explanation of why a memory has its Q-value (L4) |
+| `memory_stats` | Collection stats, point counts by source/type, session count |
 
 ## CLI
 
@@ -248,29 +280,29 @@ With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to 
 # Search memories
 openexp search -q "authentication flow" -n 5
 
-# Ingest observations into Qdrant
+# Search only experience labels
+openexp search -q "client demo" -n 5 -t experience
+
+# Ingest transcripts into Qdrant
 openexp ingest
 
-# Preview what would be ingested (dry run)
-openexp ingest --dry-run
+# Experience Library pipeline
+openexp chunk                    # chunk transcripts into ~200K token batches
+openexp topics                   # extract topics per chunk via LLM
+# Thread grouping + experience labeling via scripts/batch_label.py
 
-# Run outcome resolvers (CRM stage changes → rewards)
-openexp resolve
-
-# Show Q-cache statistics
+# Show stats
 openexp stats
 
 # Memory compaction (merge similar memories)
 openexp compact --dry-run
 
-# Manage experiences
+# Manage experience profiles
 openexp experience list
 openexp experience show sales
-openexp experience create        # interactive wizard
 
 # Visualization
 openexp viz --replay latest      # session replay
-openexp viz --demo               # demo dashboard
 ```
 
 ## Configuration

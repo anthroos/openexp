@@ -78,8 +78,8 @@ TOOLS = [
                 "role": {"type": "string", "description": "Filter by role: user or assistant"},
                 "session_id": {"type": "string", "description": "Filter by session ID"},
                 "source": {"type": "string", "description": "Filter by source: transcript, decision, etc."},
-                "date_from": {"type": "string", "description": "Start date (ISO format, e.g. 2026-04-01)"},
-                "date_to": {"type": "string", "description": "End date (ISO format, e.g. 2026-04-08)"},
+                "date_from": {"type": "string", "format": "date", "description": "Start date (ISO format, e.g. 2026-04-01)"},
+                "date_to": {"type": "string", "format": "date", "description": "End date (ISO format, e.g. 2026-04-08)"},
                 "limit": {"type": "integer", "default": 10},
             },
             "required": ["query"],
@@ -137,145 +137,12 @@ TOOLS = [
         },
     },
     {
-        "name": "get_agent_context",
-        "description": "Get full context for agent decision-making: memories + Q-scores + pending predictions",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query for relevant memories"},
-                "client_id": {"type": "string", "description": "Client ID for filtering"},
-                "limit": {"type": "integer", "default": 10},
-            },
-            "required": ["query"],
-        },
-    },
-    {
-        "name": "reflect",
-        "description": "Trigger reflection on recent memories to find patterns and insights",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "hours": {"type": "integer", "default": 24, "description": "Hours to look back"},
-            },
-            "required": [],
-        },
-    },
-    {
         "name": "memory_stats",
-        "description": "Get memory system statistics including Q-cache and prediction counts",
+        "description": "Get memory system health: point counts by source/role, pending predictions, date range, Q-cache size",
         "inputSchema": {
             "type": "object",
             "properties": {},
             "required": [],
-        },
-    },
-    {
-        "name": "resolve_outcomes",
-        "description": "Run outcome resolvers to detect business events (CRM stage changes) and apply rewards to tagged memories",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    {
-        "name": "reload_q_cache",
-        "description": "Reload Q-cache from disk. Use after manual calibration or bulk Q-value updates.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    # Phase 2: Introspection tools
-    {
-        "name": "experience_info",
-        "description": "Get current active experience config (name, weights, resolvers, boosts)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    {
-        "name": "experience_top_memories",
-        "description": "Get top or bottom N memories by Q-value in the active experience",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "n": {"type": "integer", "default": 10, "description": "Number of memories to return"},
-                "bottom": {"type": "boolean", "default": False, "description": "If true, return lowest Q-value memories instead"},
-            },
-            "required": [],
-        },
-    },
-    {
-        "name": "experience_insights",
-        "description": "Get reward distribution, learning velocity, and most/least valuable memory types in the active experience",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
-    },
-    {
-        "name": "calibrate_experience_q",
-        "description": "Manually set Q-value for a memory in the active experience",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "memory_id": {"type": "string", "description": "Memory ID to calibrate"},
-                "q_value": {"type": "number", "description": "New Q-value [-0.5, 1.0]"},
-                "reward_context": {"type": "string", "description": "Optional explanation for this calibration"},
-            },
-            "required": ["memory_id", "q_value"],
-        },
-    },
-    {
-        "name": "memory_reward_history",
-        "description": "Show reward trail for a specific memory — Q-value, visits, reward contexts (L2), and full cold storage records (L3) for each reward event",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "memory_id": {"type": "string", "description": "Memory ID to inspect"},
-            },
-            "required": ["memory_id"],
-        },
-    },
-    {
-        "name": "reward_detail",
-        "description": "Get full context for a specific reward event from L3 cold storage. Use reward_id from memory_reward_history.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "reward_id": {"type": "string", "description": "Reward ID (rwd_XXXXXXXX) from memory_reward_history"},
-            },
-            "required": ["reward_id"],
-        },
-    },
-    {
-        "name": "explain_q",
-        "description": "Get human-readable explanation of why a memory has its current Q-value. Aggregates all L4 explanations from reward history.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "memory_id": {"type": "string", "description": "Memory ID to explain"},
-                "regenerate": {"type": "boolean", "default": False, "description": "Force regenerate explanation via LLM"},
-            },
-            "required": ["memory_id"],
-        },
-    },
-    {
-        "name": "protect_memory",
-        "description": "Protect a memory from Q-value decay. Protected memories never receive negative rewards — their Q-value can only go up. Use for identity, core decisions, safety rules, critical knowledge.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "memory_id": {"type": "string", "description": "Memory ID to protect"},
-                "protect": {"type": "boolean", "default": True, "description": "True to protect, False to unprotect"},
-                "reason": {"type": "string", "description": "Why this memory should be protected"},
-            },
-            "required": ["memory_id"],
         },
     },
 ]
@@ -283,7 +150,6 @@ TOOLS = [
 
 MAX_CONTENT_LENGTH = 10000
 MAX_SEARCH_LIMIT = 100
-MAX_REFLECT_HOURS = 720  # 30 days
 
 
 def _clamp(value, lo, hi):
@@ -369,6 +235,9 @@ def handle_request(request: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps({"prediction_id": pred_id})}]}
 
         elif tool_name == "log_outcome":
+            for field in ("prediction_id", "outcome", "reward"):
+                if field not in args:
+                    raise _ErrorResponse(-32602, f"Missing required field: {field}")
             result = reward_tracker.log_outcome(
                 prediction_id=args["prediction_id"],
                 outcome=args["outcome"][:MAX_CONTENT_LENGTH],
@@ -378,400 +247,64 @@ def handle_request(request: dict) -> dict:
             q_cache.save_delta(DELTAS_DIR, SESSION_ID)
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
 
-        elif tool_name == "get_agent_context":
-            search_result = direct_search.search_memories(
-                query=args["query"][:MAX_CONTENT_LENGTH],
-                limit=_clamp(args.get("limit", 10), 1, MAX_SEARCH_LIMIT),
-                client_id=args.get("client_id"),
-                q_cache=q_cache,
-                experience=exp_name,
-            )
-            memories = search_result.get("results", [])
-
-            pending = reward_tracker.get_pending_predictions(
-                client_id=args.get("client_id")
-            )
-
-            result = {
-                "query": args["query"],
-                "memories": memories,
-                "memory_count": len(memories),
-                "pending_predictions": pending,
-                "experience": exp_name,
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "reflect":
-            hours = _clamp(args.get("hours", 24), 1, MAX_REFLECT_HOURS)
-            from datetime import datetime, timezone, timedelta
-            cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
-            search_result = direct_search.search_memories(
-                query="recent patterns decisions insights",
-                limit=20,
-                q_cache=q_cache,
-                experience=exp_name,
-            )
-            # Filter to memories within the time window
-            all_results = search_result.get("results", [])
-            filtered = []
-            for r in all_results:
-                created = r.get("created_at", "")
-                if created and created >= cutoff.isoformat():
-                    filtered.append(r)
-                elif not created:
-                    filtered.append(r)  # include if no timestamp
-
-            result = {
-                "status": "reflected",
-                "hours": hours,
-                "experience": exp_name,
-                "memories_found": len(filtered),
-                "top_memories": [
-                    {
-                        "content": r.get("memory", "")[:200],
-                        "q_value": r.get("q_value", 0.0),
-                        "type": r.get("memory_type", "fact"),
-                    }
-                    for r in filtered[:10]
-                ],
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "resolve_outcomes":
-            from .ingest import _load_configured_resolvers
-            from .outcome import resolve_outcomes
-
-            resolvers = _load_configured_resolvers()
-            if not resolvers:
-                return {"content": [{"type": "text", "text": json.dumps({"status": "no_resolvers", "message": "No outcome resolvers configured"})}]}
-
-            result = resolve_outcomes(
-                resolvers=resolvers,
-                reward_tracker=reward_tracker,
-                q_cache=q_cache,
-                q_updater=q_updater,
-                experience=exp_name,
-            )
-
-            if result.get("total_events", 0) > 0:
-                q_cache.save_delta(DELTAS_DIR, SESSION_ID)
-
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "reload_q_cache":
-            old_size = len(q_cache)
-            q_cache.load_and_merge(Q_CACHE_PATH, DELTAS_DIR)
-            new_size = len(q_cache)
-            result = {"status": "reloaded", "old_size": old_size, "new_size": new_size}
-            return {"content": [{"type": "text", "text": json.dumps(result)}]}
-
         elif tool_name == "memory_stats":
+            from .core.config import COLLECTION_NAME
+            try:
+                from qdrant_client import QdrantClient
+                qclient = QdrantClient(url="http://localhost:6333", timeout=5)
+                collection_info = qclient.get_collection(COLLECTION_NAME)
+                total_points = collection_info.points_count
+
+                # Count by source
+                from qdrant_client.models import Filter, FieldCondition, MatchValue
+                by_source = {}
+                for src in ["transcript", "decision", "mcp"]:
+                    cnt = qclient.count(
+                        collection_name=COLLECTION_NAME,
+                        count_filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value=src))]),
+                        exact=True,
+                    )
+                    if cnt.count > 0:
+                        by_source[src] = cnt.count
+
+                # Count by role
+                by_role = {}
+                for role in ["user", "assistant"]:
+                    cnt = qclient.count(
+                        collection_name=COLLECTION_NAME,
+                        count_filter=Filter(must=[FieldCondition(key="role", match=MatchValue(value=role))]),
+                        exact=True,
+                    )
+                    if cnt.count > 0:
+                        by_role[role] = cnt.count
+
+                # Experience labels count
+                exp_cnt = qclient.count(
+                    collection_name=COLLECTION_NAME,
+                    count_filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value="experience_library"))]),
+                    exact=True,
+                )
+                if exp_cnt.count > 0:
+                    by_source["experience_library"] = exp_cnt.count
+
+                qdrant_stats = {
+                    "total_points": total_points,
+                    "by_source": by_source,
+                    "by_role": by_role,
+                    "status": "ok",
+                }
+            except Exception as e:
+                logger.exception("Qdrant stats failed: %s", e)
+                qdrant_stats = {"status": "error", "error": "Qdrant unavailable"}
+
             stats = {
+                "qdrant": qdrant_stats,
                 "q_cache_size": len(q_cache),
                 "active_experience": exp_name,
-                "experience_stats": q_cache.get_experience_stats(exp_name),
                 "pending_predictions": len(reward_tracker.get_pending_predictions()),
                 "reward_stats": reward_tracker.get_prediction_stats(),
             }
             return {"content": [{"type": "text", "text": json.dumps(stats, indent=2, default=str)}]}
-
-        # Phase 2: Introspection tools
-        elif tool_name == "experience_info":
-            info = {
-                "name": active_experience.name,
-                "description": active_experience.description,
-                "session_reward_weights": active_experience.session_reward_weights,
-                "outcome_resolvers": active_experience.outcome_resolvers,
-                "retrieval_boosts": active_experience.retrieval_boosts,
-                "q_config_overrides": active_experience.q_config_overrides,
-                "process_stages": [
-                    {"name": s.name, "description": s.description, "reward_on_enter": s.reward_on_enter}
-                    for s in active_experience.process_stages
-                ],
-                "reward_memory_types": active_experience.reward_memory_types,
-                "stats": q_cache.get_experience_stats(exp_name),
-            }
-            return {"content": [{"type": "text", "text": json.dumps(info, indent=2, default=str)}]}
-
-        elif tool_name == "experience_top_memories":
-            n = _clamp(args.get("n", 10), 1, 100)
-            bottom = args.get("bottom", False)
-
-            # Collect all memories with Q-data for this experience
-            entries = []
-            for mem_id, exp_dict in q_cache._cache.items():
-                q_data = exp_dict.get(exp_name)
-                if q_data:
-                    entry = {
-                        "memory_id": mem_id,
-                        "q_value": q_data.get("q_value", 0.0),
-                        "q_visits": q_data.get("q_visits", 0),
-                        "last_reward": q_data.get("last_reward"),
-                    }
-                    contexts = q_data.get("reward_contexts")
-                    if contexts:
-                        entry["reward_contexts"] = contexts
-                    entries.append(entry)
-
-            entries.sort(key=lambda x: x["q_value"], reverse=not bottom)
-            result = {
-                "experience": exp_name,
-                "direction": "bottom" if bottom else "top",
-                "count": len(entries[:n]),
-                "memories": entries[:n],
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "experience_insights":
-            from collections import Counter
-
-            q_values = []
-            visits = []
-            rewards = []
-            for exp_dict in q_cache._cache.values():
-                q_data = exp_dict.get(exp_name)
-                if q_data:
-                    q_values.append(q_data.get("q_value", 0.0))
-                    visits.append(q_data.get("q_visits", 0))
-                    last_r = q_data.get("last_reward")
-                    if last_r is not None:
-                        rewards.append(last_r)
-
-            # Distribution buckets
-            buckets = Counter()
-            for q in q_values:
-                if q < -0.25:
-                    buckets["very_negative"] += 1
-                elif q < 0:
-                    buckets["negative"] += 1
-                elif q < 0.25:
-                    buckets["neutral"] += 1
-                elif q < 0.5:
-                    buckets["positive"] += 1
-                else:
-                    buckets["very_positive"] += 1
-
-            result = {
-                "experience": exp_name,
-                "total_memories": len(q_values),
-                "q_distribution": dict(buckets),
-                "q_mean": round(sum(q_values) / len(q_values), 4) if q_values else 0,
-                "q_min": round(min(q_values), 4) if q_values else 0,
-                "q_max": round(max(q_values), 4) if q_values else 0,
-                "avg_visits": round(sum(visits) / len(visits), 2) if visits else 0,
-                "avg_last_reward": round(sum(rewards) / len(rewards), 4) if rewards else 0,
-                "memories_never_visited": sum(1 for v in visits if v == 0),
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "calibrate_experience_q":
-            from .core.reward_log import generate_reward_id, log_reward_event
-            from .core.explanation import generate_reward_explanation, _fetch_memory_contents
-
-            mem_id = args["memory_id"]
-            new_q = _clamp(args["q_value"], -0.5, 1.0)
-
-            q_data = q_cache.get(mem_id, exp_name) or {
-                "q_action": 0.0,
-                "q_hypothesis": 0.0,
-                "q_fit": 0.0,
-                "q_visits": 0,
-            }
-            old_q = q_data.get("q_value", 0.0)
-            q_data["q_value"] = new_q
-            q_data["q_action"] = new_q
-            q_data["q_hypothesis"] = new_q
-            q_data["q_fit"] = new_q
-            from datetime import datetime, timezone
-            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
-
-            # L3 cold storage + L2 context with reward_id
-            cal_ctx = args.get("reward_context")
-            rwd_id = generate_reward_id()
-            cold_context = {
-                "old_q_value": old_q,
-                "new_q_value": new_q,
-                "reason": cal_ctx,
-            }
-
-            # L4: generate explanation
-            explanation = generate_reward_explanation(
-                reward_type="calibration",
-                reward=new_q,
-                context=cold_context,
-                memory_contents=_fetch_memory_contents([mem_id]),
-                q_before=old_q,
-                q_after=new_q,
-                experience=exp_name,
-            )
-
-            log_reward_event(
-                reward_id=rwd_id,
-                reward_type="calibration",
-                reward=new_q,
-                memory_ids=[mem_id],
-                context=cold_context,
-                experience=exp_name,
-                explanation=explanation,
-            )
-            if cal_ctx:
-                from .core.q_value import _append_reward_context
-                _append_reward_context(q_data, f"Cal {new_q:.2f}: {cal_ctx}", rwd_id)
-            q_cache.set(mem_id, q_data, exp_name)
-            # Persist immediately to survive concurrent retrospective runs.
-            # Without this, calibration relied on atexit save_delta() which could
-            # be overwritten by retrospective's full save() running in between.
-            q_cache.save_delta(DELTAS_DIR, SESSION_ID)
-
-            result = {
-                "memory_id": mem_id,
-                "experience": exp_name,
-                "new_q_value": new_q,
-                "reward_id": rwd_id,
-                "status": "calibrated",
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result)}]}
-
-        elif tool_name == "memory_reward_history":
-            from .core.reward_log import get_reward_history
-            import re
-
-            mem_id = args["memory_id"]
-            q_data = q_cache.get(mem_id, exp_name)
-            if q_data is None:
-                result = {"memory_id": mem_id, "experience": exp_name, "error": "not_found"}
-            else:
-                # Extract reward_ids from L2 contexts
-                contexts = q_data.get("reward_contexts", [])
-                reward_ids = []
-                for ctx in contexts:
-                    match = re.search(r'\[(rwd_[0-9a-f]+)\]', ctx)
-                    if match:
-                        reward_ids.append(match.group(1))
-
-                # Get L3 cold storage records for this memory
-                cold_records = get_reward_history(mem_id)
-
-                result = {
-                    "memory_id": mem_id,
-                    "experience": exp_name,
-                    "protected": q_data.get("protected", False),
-                    "q_value": q_data.get("q_value", 0.0),
-                    "q_action": q_data.get("q_action", 0.0),
-                    "q_hypothesis": q_data.get("q_hypothesis", 0.0),
-                    "q_fit": q_data.get("q_fit", 0.0),
-                    "q_visits": q_data.get("q_visits", 0),
-                    "last_reward": q_data.get("last_reward"),
-                    "q_updated_at": q_data.get("q_updated_at"),
-                    "reward_contexts": contexts,
-                    "reward_ids": reward_ids,
-                    "cold_storage_records": len(cold_records),
-                    "cold_storage": cold_records[-5:] if cold_records else [],
-                }
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "reward_detail":
-            from .core.reward_log import get_reward_detail
-
-            rwd_id = args["reward_id"]
-            record = get_reward_detail(rwd_id)
-            if record is None:
-                result = {"reward_id": rwd_id, "error": "not_found"}
-            else:
-                result = record
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "explain_q":
-            from .core.reward_log import get_reward_history
-            from .core.explanation import generate_reward_explanation, _fetch_memory_contents
-
-            mem_id = args["memory_id"]
-            regenerate = args.get("regenerate", False)
-
-            q_data = q_cache.get(mem_id, exp_name)
-            if q_data is None:
-                result = {"memory_id": mem_id, "experience": exp_name, "error": "not_found"}
-                return {"content": [{"type": "text", "text": json.dumps(result)}]}
-
-            cold_records = get_reward_history(mem_id)
-
-            # Collect existing L4 explanations
-            explanations = []
-            for rec in cold_records:
-                expl = rec.get("explanation")
-                if expl:
-                    explanations.append({
-                        "reward_id": rec.get("reward_id"),
-                        "reward_type": rec.get("reward_type"),
-                        "reward": rec.get("reward"),
-                        "timestamp": rec.get("timestamp"),
-                        "explanation": expl,
-                    })
-
-            # Regenerate overall summary if requested
-            overall_summary = None
-            if regenerate and cold_records:
-                memory_contents = _fetch_memory_contents([mem_id])
-                # Build combined context from all records
-                combined_context = {
-                    "total_events": len(cold_records),
-                    "reward_types": list(set(r.get("reward_type", "") for r in cold_records)),
-                    "total_reward": sum(r.get("reward", 0) for r in cold_records),
-                    "events_summary": [
-                        {"type": r.get("reward_type"), "reward": r.get("reward"), "ts": r.get("timestamp")}
-                        for r in cold_records[-10:]
-                    ],
-                }
-                overall_summary = generate_reward_explanation(
-                    reward_type="summary",
-                    reward=sum(r.get("reward", 0) for r in cold_records),
-                    context=combined_context,
-                    memory_contents=memory_contents,
-                    q_after=q_data.get("q_value", 0.0),
-                    experience=exp_name,
-                )
-
-            result = {
-                "memory_id": mem_id,
-                "experience": exp_name,
-                "q_value": q_data.get("q_value", 0.0),
-                "q_visits": q_data.get("q_visits", 0),
-                "total_reward_events": len(cold_records),
-                "explanations": explanations,
-                "reward_contexts": q_data.get("reward_contexts", []),
-            }
-            if overall_summary:
-                result["overall_summary"] = overall_summary
-
-            return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
-
-        elif tool_name == "protect_memory":
-            mem_id = args["memory_id"]
-            protect = args.get("protect", True)
-            reason = args.get("reason", "")
-
-            q_data = q_cache.get(mem_id, exp_name)
-            if q_data is None:
-                q_data = {"q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0, "q_value": 0.0, "q_visits": 0}
-
-            q_data["protected"] = protect
-            if reason:
-                from .core.q_value import _append_reward_context
-                action = "Protected" if protect else "Unprotected"
-                _append_reward_context(q_data, f"{action}: {reason}")
-
-            from datetime import datetime, timezone
-            q_data["q_updated_at"] = datetime.now(timezone.utc).isoformat()
-            q_cache.set(mem_id, q_data, exp_name)
-
-            result = {
-                "memory_id": mem_id,
-                "experience": exp_name,
-                "protected": protect,
-                "q_value": q_data.get("q_value", 0.0),
-                "status": "protected" if protect else "unprotected",
-            }
-            return {"content": [{"type": "text", "text": json.dumps(result)}]}
 
         raise _ErrorResponse(-32601, f"Unknown tool: {tool_name}")
 
