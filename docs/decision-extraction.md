@@ -96,7 +96,7 @@ Decision extraction runs inside the SessionEnd hook and spawns `claude -p` as a 
 
 ### `read_transcript(transcript_path, session_id=None) -> str`
 
-Read and condense a Claude Code JSONL transcript. Returns formatted text with `IVAN:` and `ASSISTANT:` prefixes.
+Read and condense a Claude Code JSONL transcript. Returns formatted text with `USER:` and `ASSISTANT:` prefixes.
 
 ### `extract_decisions(transcript_text, session_id="", experience="default") -> List[Dict]`
 

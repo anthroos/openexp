@@ -38,15 +38,15 @@ class TestBuildExplanationPrompt:
             reward_type="prediction",
             reward=0.80,
             context={
-                "prediction": "SQUAD will sign contract",
+                "prediction": "Acme Corp will sign contract",
                 "outcome": "Contract signed",
                 "confidence": 0.7,
             },
-            memory_contents={"mem-1": "SQUAD meeting notes"},
+            memory_contents={"mem-1": "Acme Corp meeting notes"},
             q_before=0.30,
             q_after=0.50,
         )
-        assert "SQUAD will sign contract" in prompt
+        assert "Acme Corp will sign contract" in prompt
         assert "Contract signed" in prompt
         assert "0.7" in prompt
 

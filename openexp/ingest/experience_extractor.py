@@ -204,7 +204,7 @@ def _gather_thread_messages(
                 if not mem:
                     continue
                 role = msg.get("role", "?")
-                label = "IVAN" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
+                label = "USER" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
                 entry = f"{label}: {mem[:500]}\n" if label else f"{mem[:500]}\n"
 
                 if total_chars + len(entry) > max_chars:

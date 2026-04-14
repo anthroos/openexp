@@ -51,7 +51,7 @@ stage_0_cleanup:
     priority: P0
     description: 'Remove all points where source != "transcript" and type != "decision".
       Keep only conversation transcripts and extracted decisions. User explicitly
-      asked: "треба всі обзервейшн видалити"
+      asked to remove all old observations.
 
       '
     done_at: '2026-04-09'
@@ -261,15 +261,14 @@ stage_3_interface:
     status: TODO
     priority: P0
     description: "The KEY new piece. A Claude Code skill that:\nUser says: /recall\
-      \ SQUAD contract Skill does:\n  1. search_memory(\"SQUAD contract\", limit=20)\n\
+      \ Acme contract Skill does:\n  1. search_memory(\"Acme contract\", limit=20)\n\
       \  2. Group results by session/date\n  3. Format as structured context with\
       \ scores\n  4. Return to Claude for reasoning\n\nUser says: /recall --session\
       \ abc123 Skill does: retrieve all messages from that session\nUser says: /recall\
       \ --last-week pipeline decisions Skill does: search with date_from filter, type=decision\n\
       SKILL.md frontmatter:\n  name: recall\n  description: Search hippocampus memory\
       \ on demand\n  user_invocable: true\n  arguments: query text + optional flags\n\
-      \nImplementation: ~/claude-skills/skills/recall/SKILL.md Update dispatcher routing\
-      \ table.\n"
+      \nImplementation: as a Claude Code skill with SKILL.md.\n"
   - id: S3-07
     title: Decide SessionStart hook fate (keep vs remove)
     status: TODO
@@ -373,9 +372,9 @@ stage_5_experience_library:
       '
     done_at: '2026-04-14'
   - id: S5-04
-    title: Experience labeling (pilot — МПУВ thread)
+    title: Experience labeling (pilot thread)
     status: DONE
-    description: 'Validated the approach on thread #4 (МПУВ). 19 timeline events, 8
+    description: 'Validated the approach on thread #4 (pilot). 19 timeline events, 8
       experience labels in context→actions→outcome format.
 
       '
@@ -427,7 +426,7 @@ stage_6_next:
     status: TODO
     priority: P2
     description: 'Compress all 269 experience labels to fit in context window. Partnership
-      with Ivan Zakazov (YC W26).
+      with external compression service.
 
       '
   - id: S6-03

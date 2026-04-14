@@ -17,7 +17,7 @@ class TestFormatChunkForLLM:
             }],
         }
         text = _format_chunk_for_llm(chunk)
-        assert "IVAN: hello" in text
+        assert "USER: hello" in text
         assert "ASSISTANT: hi there" in text
         assert "SESSION abc123" in text
 

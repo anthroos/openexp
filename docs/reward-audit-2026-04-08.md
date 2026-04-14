@@ -55,7 +55,7 @@
 
 ### Decision
 
-**Ivan requested removal** (2026-04-08). Reason: heuristic doesn't reflect real session value.
+**Maintainer requested removal** (2026-04-08). Reason: heuristic doesn't reflect real session value.
 
 ---
 
@@ -107,9 +107,9 @@
 ### Configuration
 
 - `.env` sets: `OPENEXP_OUTCOME_RESOLVERS=openexp.resolvers.crm_csv:CRMCSVResolver`
-- `.env` sets: `OPENEXP_CRM_DIR=/Users/ivanpasichnyk/welababeldata/sales/crm`
-- `crm_snapshot.json` exists (14KB, last modified 2026-04-08)
-- Snapshot contains real deal data (deal-dt-001 through deal-dt-003, etc.)
+- `.env` sets: `OPENEXP_CRM_DIR=<path-to-your-crm-data>`
+- `crm_snapshot.json` exists (snapshot of CRM deal data)
+- Snapshot contains deal data (deal IDs, stages, outcomes)
 
 ### Triggers
 
@@ -154,7 +154,7 @@
 
 - **62 calibrations** in reward_log.jsonl
 - All in `sales` experience
-- Examples: DT pilot paid q=0.8, SQUAD Drive+BambooHR q=0.8, DT OOO auto-reply q=0.0
+- Examples: client pilot paid q=0.8, client integration q=0.8, auto-reply setup q=0.0
 - Values range: 0.0 to 0.9
 
 ### Race condition bug (CONFIRMED)
@@ -246,7 +246,7 @@ Multiple writers to `q_cache.json`:
 
 ## Action Items
 
-1. **Remove Path 1 session reward** — Ivan's decision. Heuristic doesn't reflect real value.
+1. **Remove Path 1 session reward** — maintainer's decision. Heuristic doesn't reflect real value.
 2. **Clean test fixtures from Q-cache** — Remove mem-0000 through mem-0004 entries.
 3. **Add Qdrant existence check to retrospective** — `apply_adjustments()` should verify memory exists in Qdrant, not just Q-cache.
 4. **Fix calibration persistence** — Use `save()` with locking instead of `save_delta()`, or merge deltas before retrospective runs.

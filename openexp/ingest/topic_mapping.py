@@ -23,16 +23,16 @@ You are analyzing a batch of work conversations between a user and their AI assi
 Your job: identify ALL distinct TOPICS, PROJECTS, or WORK THREADS in this batch.
 
 A topic is a distinct stream of work. Examples:
-- "SQUAD HR AI Bot deal" (client negotiations, proposal, pricing)
+- "Acme CRM Integration" (client negotiations, proposal, pricing)
 - "OpenExp v2 refactor" (code cleanup, architecture changes)
-- "Scople automation project" (email templates, analytics)
+- "Widget Co analytics project" (email templates, analytics)
 - "Daily briefing / task planning" (morning routines, prioritization)
-- "Personal / SF move logistics" (housing, visa, gym)
+- "Infrastructure migration" (server setup, DNS, deployment)
 
 ## Rules
 1. Each topic must be a DISTINCT thread of work, not a single message
 2. Include the topic name, a 1-2 sentence description, which session_ids it appears in, and approximate message count
-3. Be specific: "SQUAD HR AI Bot proposal" not "client work"
+3. Be specific: "Acme CRM integration proposal" not "client work"
 4. Include ALL topics, even small ones (3+ messages)
 5. If a topic spans business development (leads, proposals, negotiations) — note the stage and outcome if visible
 
@@ -93,7 +93,7 @@ def _format_chunk_for_llm(chunk: dict, max_chars: int = 50_000) -> str:
         for msg in sampled:
             role = msg.get("role", "?")
             text = msg.get("memory", "")
-            label = "IVAN" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
+            label = "USER" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
             entry = f"{label}: {text}\n" if label else f"{text}\n"
 
             if session_chars + len(entry) > chars_per_session:
