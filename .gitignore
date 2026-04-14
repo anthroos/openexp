@@ -36,6 +36,6 @@ Thumbs.db
 # Qdrant data
 qdrant_storage/
 
-# Generated viz output
-openexp-viz*.html
-openexp-replay*.html
+# Generated HTML
+*.html
+!openexp/static/*.html

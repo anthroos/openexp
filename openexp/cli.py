@@ -105,8 +105,13 @@ def cmd_ingest(args):
         if getattr(args, "all", False):
             dirs = [d for d in projects_dir.iterdir() if d.is_dir()]
         else:
-            main_dir = projects_dir / "-Users-ivanpasichnyk"
-            dirs = [main_dir] if main_dir.exists() else []
+            # Find the main project dir (largest by file count)
+            all_dirs = sorted(
+                [d for d in projects_dir.iterdir() if d.is_dir()],
+                key=lambda d: sum(1 for _ in d.iterdir()),
+                reverse=True,
+            )
+            dirs = all_dirs[:1] if all_dirs else []
 
         if not dirs:
             print("No transcripts found", file=sys.stderr)
@@ -772,6 +777,62 @@ def cmd_experience(args):
         sys.exit(1)
 
 
+def cmd_chunk(args):
+    """Chunk transcript data for experience extraction."""
+    from pathlib import Path
+    from .ingest.chunking import run_chunking
+
+    logging.basicConfig(level=logging.INFO, force=True)
+    max_chars = args.max_tokens * 4  # ~4 chars per token
+    output_dir = Path(args.output) if args.output else None
+
+    result = run_chunking(output_dir=output_dir, max_chunk_chars=max_chars)
+
+    print(f"\nChunking complete:")
+    print(f"  Sessions: {result['total_sessions']}")
+    print(f"  Points:   {result['total_points']}")
+    print(f"  Chunks:   {result['total_chunks']}")
+    print(f"  Output:   {result['output_dir']}")
+    print()
+    for c in result["chunks"]:
+        dr = c["date_range"]
+        start = dr["start"][:10] if dr["start"] else "?"
+        end = dr["end"][:10] if dr["end"] else "?"
+        print(f"  chunk_{c['chunk_id']:03d}: {c['session_count']:3d} sessions, "
+              f"{c['total_tokens']:6d} tokens, {c['total_messages']:4d} msgs  "
+              f"[{start} → {end}]")
+
+
+def cmd_topics(args):
+    """Extract topics from chunks using LLM."""
+    from pathlib import Path
+    from .ingest.topic_mapping import run_topic_mapping
+
+    logging.basicConfig(level=logging.INFO, force=True)
+    chunks_dir = Path(args.chunks_dir) if args.chunks_dir else None
+
+    result = run_topic_mapping(
+        chunks_dir=chunks_dir,
+        chunk_ids=args.chunks,
+        force=args.force,
+    )
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        sys.exit(1)
+
+    print(f"\nTopic extraction:")
+    print(f"  Total chunks: {result['total_chunks']}")
+    print(f"  Processed:    {result['processed']}")
+    print(f"  Skipped:      {result['skipped']}")
+    print(f"  Failed:       {result['failed']}")
+    print()
+    for r in result["results"]:
+        status = r["status"]
+        icon = {"extracted": "+", "skipped": "=", "failed": "X"}.get(status, "?")
+        print(f"  [{icon}] chunk_{r['chunk_id']:03d}: {r['topics_count']} topics ({status})")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="openexp",
@@ -843,6 +904,15 @@ def main():
     sp_viz.add_argument("--replay", default=None, help="Session ID for replay mode (or 'latest')")
     sp_viz.add_argument("--demo", action="store_true", help="Generate scripted demo replay")
 
+    sp_chunk = sub.add_parser("chunk", help="Chunk transcript data for experience extraction")
+    sp_chunk.add_argument("--max-tokens", type=int, default=200000, help="Max tokens per chunk (default 200K)")
+    sp_chunk.add_argument("--output", "-o", default=None, help="Output directory")
+
+    sp_topics = sub.add_parser("topics", help="Extract topics from chunks (LLM pass)")
+    sp_topics.add_argument("--chunks", type=int, nargs="*", help="Specific chunk IDs to process")
+    sp_topics.add_argument("--force", action="store_true", help="Re-extract even if already done")
+    sp_topics.add_argument("--chunks-dir", default=None, help="Chunks directory")
+
     args = parser.parse_args()
 
     if args.cmd == "search":
@@ -863,6 +933,10 @@ def main():
         cmd_experience(args)
     elif args.cmd == "viz":
         cmd_viz(args)
+    elif args.cmd == "chunk":
+        cmd_chunk(args)
+    elif args.cmd == "topics":
+        cmd_topics(args)
     else:
         parser.print_help()
         sys.exit(1)

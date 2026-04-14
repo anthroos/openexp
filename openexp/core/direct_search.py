@@ -122,10 +122,16 @@ def search_memories(
             FieldCondition(key="source", match=MatchValue(value=source))
         )
     if date_from or date_to:
+        import re
+        _date_re = re.compile(r'^\d{4}-\d{2}-\d{2}(T[\d:+Z.\-]+)?$')
         range_kwargs = {}
         if date_from:
+            if not _date_re.match(date_from):
+                return {"results": [], "count": 0, "error": "Invalid date_from format"}
             range_kwargs["gte"] = date_from
         if date_to:
+            if not _date_re.match(date_to):
+                return {"results": [], "count": 0, "error": "Invalid date_to format"}
             range_kwargs["lte"] = date_to
         must_conditions.append(
             FieldCondition(key="created_at", range=Range(**range_kwargs))
@@ -280,4 +286,100 @@ def add_memory(
         "id": point_id,
         "enrichment": enrichment,
         "validity": {"start": ts_valid_start, "end": ts_valid_end},
+    }
+
+
+def add_experience(
+    experience_label: dict,
+    thread_id: int,
+    thread_name: str,
+    q_cache: Optional[QCache] = None,
+    experience: str = "default",
+) -> Dict[str, Any]:
+    """Store a structured experience label in Qdrant.
+
+    The embedding is computed from the searchable parts (situation + insight +
+    applies_when) so that search_memory finds this experience when the user
+    faces a similar situation — not when they search for the raw actions.
+
+    The full label JSON is stored in the payload for retrieval.
+    """
+    ctx = experience_label.get("context", {})
+    lesson = experience_label.get("lesson", {})
+    outcome = experience_label.get("outcome", {})
+
+    # Build embedding text from the parts people will SEARCH for
+    search_text = " ".join(filter(None, [
+        ctx.get("situation", ""),
+        lesson.get("insight", ""),
+        lesson.get("applies_when", ""),
+        outcome.get("result", ""),
+    ]))
+
+    # Build human-readable memory text for display
+    memory_text = (
+        f"EXPERIENCE: {lesson.get('insight', 'No insight')}\n"
+        f"APPLIES WHEN: {lesson.get('applies_when', '?')}\n"
+        f"CONTEXT: {ctx.get('situation', '?')}\n"
+        f"OUTCOME: {outcome.get('result', '?')} "
+        f"({'success' if outcome.get('success') else 'failure' if outcome.get('success') is False else 'unclear'})\n"
+        f"ANTI-PATTERN: {lesson.get('anti_pattern', 'N/A')}"
+    )
+
+    vector = _embed(search_text)
+    point_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Top-level fields (importance, ts_valid_*, status) are duplicated in metadata
+    # intentionally — Qdrant filters use top-level keys, retrieval uses metadata.
+    payload = {
+        "memory": memory_text,
+        "agent_id": "main",
+        "memory_type": "experience",
+        "created_at": now,
+        "user_id": "default",
+        "source": "experience_library",
+        "metadata": {
+            "agent": "main",
+            "type": "experience",
+            "source": "experience_library",
+            "importance": 0.8,
+            "title": lesson.get("insight", "")[:80],
+            "summary": memory_text[:200],
+            "tags": ["experience", f"thread_{thread_id}"],
+            "ts_valid_start": now,
+            "ts_valid_end": None,
+            "thread_id": thread_id,
+            "thread_name": thread_name,
+            "experience_id": experience_label.get("experience_id", ""),
+            "experience_label": experience_label,
+        },
+        "importance": 0.8,
+        "ts_valid_start": now,
+        "ts_valid_end": None,
+        "status": "active",
+        "status_updated_at": now,
+    }
+
+    qc = _get_qdrant()
+    qc.upsert(
+        collection_name=COLLECTION_NAME,
+        points=[PointStruct(id=point_id, vector=vector, payload=payload)],
+    )
+
+    if q_cache:
+        q_init = DEFAULT_Q_CONFIG["q_init"]
+        q_cache.set(point_id, {
+            "q_value": q_init,
+            "q_action": q_init,
+            "q_hypothesis": q_init,
+            "q_fit": q_init,
+            "q_visits": 0,
+        }, experience=experience)
+
+    return {
+        "status": "ok",
+        "id": point_id,
+        "experience_id": experience_label.get("experience_id", ""),
+        "insight": lesson.get("insight", ""),
     }
