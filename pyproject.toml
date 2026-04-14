@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
 authors = [
-    { name = "Ivan Pasichnyk", email = "ivan@welabeldata.com" },
+    { name = "anthroos" },
 ]
 
 dependencies = [

@@ -39,7 +39,7 @@ L2 context string:  "Session +0.30: 2 commits [rwd_abc12345]"
                                                 ↑
 L3 reward_log.jsonl: {"reward_id": "rwd_abc12345", ..., "explanation": "..."}
                                                                          ↑
-L4 explanation:      "Ця нотатка допомогла бо містила архітектурне рішення..."
+L4 explanation:      "This note helped because it contained an architectural decision..."
 ```
 
 ---
@@ -235,7 +235,7 @@ Retrieves up to `limit` (default 5) memory texts from Qdrant by ID. Returns `{me
     "reward_breakdown": {"commits": 2, "prs": 1, "writes": 5},
     "session_id": "abc123"
   },
-  "explanation": "Ця нотатка допомогла бо містила архітектурне рішення..."
+  "explanation": "This note helped because it contained an architectural decision..."
 }
 ```
 

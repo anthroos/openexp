@@ -126,7 +126,7 @@ def read_transcript(transcript_path: Path, session_id: Optional[str] = None) -> 
     formatted = []
     total_chars = 0
     for role, text in reversed(messages):
-        entry_text = f"{'IVAN' if role == 'user' else 'ASSISTANT'}: {text}\n"
+        entry_text = f"{'USER' if role == 'user' else 'ASSISTANT'}: {text}\n"
         if total_chars + len(entry_text) > EXTRACT_CONTEXT_LIMIT:
             break
         formatted.append(entry_text)

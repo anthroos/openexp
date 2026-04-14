@@ -154,7 +154,7 @@ def _extract_thread_text(thread: dict, max_chars: int = 80_000) -> str:
             for m in sample:
                 mem = m.get("memory", "")[:500]
                 role = m.get("role", "?")
-                label = "IVAN" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
+                label = "USER" if role == "user" else ("ASSISTANT" if role == "assistant" else "")
                 entry = f"{label}: {mem}\n" if label else f"{mem}\n"
                 if total + len(entry) > max_chars:
                     lines.append("... [truncated] ...")

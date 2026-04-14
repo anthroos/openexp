@@ -109,7 +109,7 @@ Raw conversations (26K messages)
     ↓ Opus extracts topics per chunk
 170 topics
     ↓ group across chunks by work thread
-36 threads (e.g., "SQUAD HR AI Bot Deal", "МПУВ Document Automation")
+36 threads (e.g., "Enterprise Chatbot Deal", "Document Automation Pipeline")
     ↓ Opus labels each thread
 269 experience labels (context → actions → outcome → lesson)
     ↓ stored in Qdrant as type="experience"
@@ -122,8 +122,8 @@ Each experience label is a structured training triplet:
 {
   "context": {
     "situation": "Client needs automated report generation from 40-page template",
-    "constraints": ["Non-technical operators", "14 communities"],
-    "stakeholders": ["Igor Bespalov (client)", "Ivan (builder)"]
+    "constraints": ["Non-technical operators", "14 regional offices"],
+    "stakeholders": ["Client PM", "Builder (you)"]
   },
   "actions": [
     {"what": "Built 7-stage pipeline with --auto flag", "why": "Remove human bottleneck"}
@@ -139,7 +139,7 @@ Each experience label is a structured training triplet:
 }
 ```
 
-When a new situation arises, `search_memory` finds relevant experiences by matching the **situation**, not keywords — so "document automation client" finds lessons from a Ukrainian waste management project because the *pattern* matches.
+When a new situation arises, `search_memory` finds relevant experiences by matching the **situation**, not keywords — so "document automation client" finds lessons from a completely different industry project because the *pattern* matches.
 
 **Three levels of use:**
 1. **Now:** Experience layer as system prompt — skill queries Qdrant, formats advice
