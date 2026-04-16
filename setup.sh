@@ -83,7 +83,6 @@ else
   else
     DOCKER_ARGS=(-d --name openexp-qdrant --restart unless-stopped
       -p 127.0.0.1:6333:6333
-      --user 1000:1000
       -v openexp_qdrant_data:/qdrant/storage)
     if [ -n "${QDRANT_API_KEY:-}" ]; then
       DOCKER_ARGS+=(-e "QDRANT__SERVICE__API_KEY=$QDRANT_API_KEY")
