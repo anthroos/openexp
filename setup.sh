@@ -112,7 +112,7 @@ echo ""
 
 # --- Step 4: Create collection ---
 echo "Step 4/7: Creating Qdrant collection..."
-COLLECTION_EXISTS=$(curl -sf "http://localhost:6333/collections/$COLLECTION" 2>/dev/null | jq -r '.status // "not_found"')
+COLLECTION_EXISTS=$(curl -sf "http://localhost:6333/collections/$COLLECTION" 2>/dev/null | jq -r '.status // "not_found"' || echo "not_found")
 if [ "$COLLECTION_EXISTS" = "ok" ]; then
   echo "  ✅ Collection '$COLLECTION' already exists"
 else
