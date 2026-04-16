@@ -83,7 +83,8 @@ else
   else
     DOCKER_ARGS=(-d --name openexp-qdrant --restart unless-stopped
       -p 127.0.0.1:6333:6333
-      -v openexp_qdrant_data:/qdrant/storage)
+      -v openexp_qdrant_data:/qdrant/storage
+      --user 0:0)
     if [ -n "${QDRANT_API_KEY:-}" ]; then
       DOCKER_ARGS+=(-e "QDRANT__SERVICE__API_KEY=$QDRANT_API_KEY")
     fi
@@ -164,26 +165,26 @@ HOOKS_DIR="$OPENEXP_DIR/openexp/hooks"
 SETTINGS=$(echo "$SETTINGS" | jq --arg hooks_dir "$HOOKS_DIR" '
   # SessionStart hook
   .hooks.SessionStart = (.hooks.SessionStart // []) |
-  if any(.[]; .command | contains("openexp")) then . else
-    . + [{"type": "command", "command": ($hooks_dir + "/session-start.sh")}]
+  if any(.hooks.SessionStart[]; (.command // "") | contains("openexp")) then . else
+    .hooks.SessionStart += [{"type": "command", "command": ($hooks_dir + "/session-start.sh")}]
   end |
 
   # UserPromptSubmit hook
   .hooks.UserPromptSubmit = (.hooks.UserPromptSubmit // []) |
-  if any(.[]; .command | contains("openexp")) then . else
-    . + [{"type": "command", "command": ($hooks_dir + "/user-prompt-recall.sh")}]
+  if any(.hooks.UserPromptSubmit[]; (.command // "") | contains("openexp")) then . else
+    .hooks.UserPromptSubmit += [{"type": "command", "command": ($hooks_dir + "/user-prompt-recall.sh")}]
   end |
 
   # PostToolUse hook
   .hooks.PostToolUse = (.hooks.PostToolUse // []) |
-  if any(.[]; .command | contains("openexp")) then . else
-    . + [{"type": "command", "command": ($hooks_dir + "/post-tool-use.sh")}]
+  if any(.hooks.PostToolUse[]; (.command // "") | contains("openexp")) then . else
+    .hooks.PostToolUse += [{"type": "command", "command": ($hooks_dir + "/post-tool-use.sh")}]
   end |
 
   # SessionEnd hook
   .hooks.SessionEnd = (.hooks.SessionEnd // []) |
-  if any(.[]; .command | contains("openexp")) then . else
-    . + [{"type": "command", "command": ($hooks_dir + "/session-end.sh"), "timeout": 30}]
+  if any(.hooks.SessionEnd[]; (.command // "") | contains("openexp")) then . else
+    .hooks.SessionEnd += [{"type": "command", "command": ($hooks_dir + "/session-end.sh"), "timeout": 30}]
   end
 ')
 
