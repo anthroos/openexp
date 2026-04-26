@@ -1,3 +1,9 @@
+> **⚠️ STALE — pre-2026-04-26 redesign.**
+> This document describes the v1 architecture (Q-learning, multiple reward paths, Experience Library labeling) which was removed or replaced on 2026-04-26.
+> See [redesign-2026-04-26.md](redesign-2026-04-26.md) and the [README](../README.md) for the current architecture.
+
+---
+
 # OpenExp — Product Page Content
 
 > Source of truth for website/landing page. Written for humans, not developers.

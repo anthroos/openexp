@@ -1,0 +1,310 @@
+# Anonymized trajectory — output of prompts/anonymize.md applied to:
+#   sources: author's internal CRM activity log, email thread snippets,
+#            deal + lead records (private, not shared).
+# Author redacted; counterparty redacted to category tokens.
+
+trajectory:
+  experience_type: acquisition
+  domain: sales
+  duration_days: 57
+  notes: |
+    Inbound discovery → free pilot batch → ~3 weeks silence on counterparty side
+    → re-engagement → PM introduced → contract signed via local e-signing platform.
+    Vertical: <regulated_industry>. Geography: <local_jurisdiction>.
+
+  steps:
+    - relative_day: 0
+      kind: observation
+      channel: scheduling_link
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Counterparty CTO (<regulated_industry> startup, seed-stage funding range)
+        booked a 30-min discovery call via the founder's public scheduling link.
+        Inbound, no prior thread. Counterparty company profile:
+        specialized hardware platform operating in regulated environments.
+
+    - relative_day: 3
+      kind: meeting
+      channel: video_call
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+        - role: founder
+          seniority: exec
+      content: |
+        Discovery call. Counterparty CTO running late from another meeting.
+        Founder waited on the call, sent a status-check message after the
+        no-show window. Counterparty joined briefly with apology; short
+        intro conversation happened. Tone: cordial, slight imbalance.
+
+    - relative_day: 3
+      kind: message
+      channel: email
+      actors:
+        - role: founder
+          seniority: exec
+        - role: own_cto
+          seniority: exec
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Founder sends a thank-you email and introduces own CTO for technical
+        follow-up. Standard handoff: founder owns the relationship, own CTO
+        owns technical detail.
+
+    - relative_day: 4
+      kind: message
+      channel: email
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Counterparty replies: their lawyer prefers NDA prepared on counterparty
+        side ("a bit easier for us"). Requests counterparty-onboarding documents
+        from founder side: <local_individual_entity> registration data.
+        Proposes a tech call between own_cto and counterparty_cto for Wed
+        18:00 local time.
+
+    - relative_day: 5
+      kind: action
+      channel: email
+      actors:
+        - role: founder
+          seniority: exec
+      content: |
+        Founder sends counterparty-onboarding pack: <local_individual_entity>
+        tax ID, phone, <foreign_corp_entity> registration ID + address.
+        Both legal entities offered — counterparty will choose contracting party.
+
+    - relative_day: 6
+      kind: action
+      channel: email
+      actors:
+        - role: founder
+          seniority: exec
+      content: |
+        Counterparty's lawyer asks for passport data for the NDA (series
+        number + issuing authority). Founder sends. Lawyer-driven, counterparty
+        side.
+
+    - relative_day: 10
+      kind: decision
+      channel: document_signing
+      actors:
+        - role: founder
+          seniority: exec
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Mutual NDA signed. Counterparty-prepared template, accepted as-is.
+        Contract entity = <local_individual_entity>, not <foreign_corp_entity>.
+
+    - relative_day: 18
+      kind: action
+      channel: drive_share
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+        - role: own_cto
+          seniority: exec
+      content: |
+        Counterparty shares a sample video file via cloud storage along with
+        an annotation format spec document. Free pilot batch — no contract
+        yet. Implicit deal: deliver pilot well, then commercial.
+
+    - relative_day: 18
+      kind: message
+      channel: email
+      actors:
+        - role: own_cto
+          seniority: exec
+      content: |
+        own_cto accepts pilot task, brief reply: "Thanks for the task, we'll
+        start today."
+
+    - relative_day: 20
+      kind: observation
+      channel: email
+      actors:
+        - role: own_cto
+          seniority: exec
+        - role: counterparty_cto
+          seniority: exec
+        - role: counterparty_engineer
+          seniority: mid
+      content: |
+        Q&A on annotation density: every frame or 1/sec? How many classes?
+        Counterparty: every frame; full classes list provided; dataset for
+        ML validation. own_cto observes: ~7000 frames in this short clip —
+        substantial volume. Will use tracking to speed up. Counterparty
+        engineer cc'd by counterparty_cto.
+
+    - relative_day: 24
+      kind: action
+      channel: drive_share
+      actors:
+        - role: own_cto
+          seniority: exec
+      content: |
+        Pilot batch delivered: 4500 frames annotated. No invoice — free pilot.
+
+    - relative_day: 25
+      kind: observation
+      channel: silence
+      content: |
+        Silence period from counterparty side begins. Counterparty had
+        implicitly promised review around day +24. ~3 weeks pass without
+        substantive reply on commercial terms.
+
+    - relative_day: 49
+      kind: message
+      channel: email
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Counterparty re-engages. Proposes call: "11 EST tomorrow Wed" — 18:00
+        local. No explicit acknowledgement of the silence.
+
+    - relative_day: 50
+      kind: meeting
+      channel: video_call
+      actors:
+        - role: founder
+          seniority: exec
+        - role: own_cto
+          seniority: exec
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Sync call. Counterparty confirms moving to commercial. Will introduce
+        a new project manager who will own day-to-day coordination.
+
+    - relative_day: 51
+      kind: message
+      channel: email
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+        - role: counterparty_pm
+          seniority: mid
+      content: |
+        Counterparty CTO sends a three-way intro email: introduces own_cto+founder
+        to counterparty_pm. PM's stated job: ensure WLD has all input data,
+        and control that internal ML team uses delivered annotations on time.
+        Counterparty CTO is stepping back from operational role.
+
+    - relative_day: 52
+      kind: action
+      channel: email
+      actors:
+        - role: founder
+          seniority: exec
+        - role: counterparty_pm
+          seniority: mid
+      content: |
+        Founder replies with greeting + draft Service Agreement attached (PDF,
+        <contract_internal_id>). Rate band: <hourly_rate:low_per_hour>
+        in <local_currency>, FX-tracked at <central_bank_rate>. MNDA reference
+        cited in agreement. Cloud-storage link to draft included.
+
+    - relative_day: 52
+      kind: observation
+      channel: email
+      actors:
+        - role: own_cto
+          seniority: exec
+      content: |
+        own_cto provides throughput statistics from pilot: 120–240 frames/hr
+        depending on scene density. Recommends planning at 120 frames/hr
+        as conservative.
+
+    - relative_day: 55
+      kind: message
+      channel: email
+      actors:
+        - role: counterparty_cto
+          seniority: exec
+      content: |
+        Counterparty CTO: thanks for stats — "very useful for cost forecasting."
+        Side request: while counterparty_pm processes the contract, can own_cto
+        migrate the annotation tooling onto counterparty's <cloud_provider>
+        account? Out-of-scope ask, technical only.
+
+    - relative_day: 55
+      kind: action
+      channel: email
+      actors:
+        - role: own_cto
+          seniority: exec
+      content: |
+        own_cto agrees to tooling migration. Specifies infra requirements:
+        2 cores, 15GB RAM, SSH access. Notes scaling considerations if many
+        annotators work in parallel.
+
+    - relative_day: 56
+      kind: observation
+      channel: email
+      actors:
+        - role: counterparty_pm
+          seniority: mid
+      content: |
+        counterparty_pm asks: do you have <e_signing_platform_local>? Standard
+        local-jurisdiction e-signing platform check.
+
+    - relative_day: 56
+      kind: decision
+      channel: email
+      actors:
+        - role: founder
+          seniority: exec
+      content: |
+        Founder confirms <e_signing_platform_local> is available. Commits to
+        next-day actions: update contract draft with counterparty rekvizity,
+        upload to platform, sign with own digital cert, send invite to
+        counterparty_pm.
+
+    - relative_day: 56
+      kind: action
+      channel: internal_crm
+      actors:
+        - role: founder
+          seniority: exec
+      content: |
+        Founder logs a TODO in own CRM listing four specific subtasks for
+        next-day contract finalization. Captures counterparty rekvizity
+        gathered during the day (legal entity name, tax IDs, banking, director,
+        IT-zone-resident status) for the contract.
+
+    - relative_day: 57
+      kind: action
+      channel: e_signing_platform_local
+      actors:
+        - role: founder
+          seniority: exec
+      content: |
+        Founder updates contract draft with counterparty rekvizity, uploads
+        to <e_signing_platform_local>, signs from own side using digital key,
+        sends invite. Status: "Awaiting counterparty signature." Time: late
+        evening, ~23:39 local.
+
+    - relative_day: 57
+      kind: observation
+      channel: e_signing_platform_local
+      actors:
+        - role: counterparty_pm
+          seniority: mid
+      content: |
+        counterparty_pm signs from their side ~90 minutes after invite
+        (~01:09 local next morning). Contract is now signed both sides.
+        counterparty_pm signals readiness for next dataset
+        (different vertical-specific scope) starting next week.
+        Asks for a sample of internal task spec from own_cto and a
+        shared messenger group for ongoing comms.
+
+  terminal_event:
+    relative_day: 57
+    kind: contract_signed_both_sides
+    channel: e_signing_platform_local

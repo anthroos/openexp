@@ -1,8 +1,8 @@
 <p align="center">
   <h1 align="center">OpenExp</h1>
   <p align="center">
-    <strong>Skills tell your AI how. OpenExp teaches it what works.</strong><br>
-    Outcome-based learning for AI agents. Q-learning memory that gets smarter with every session.
+    <strong>How did this happen? — a hippocampus for AI agents.</strong><br>
+    Capture trajectories raw. Grade only when reality returns its verdict. Build a labeled corpus of human-AI decisions tied to grounded outcomes.
   </p>
 </p>
 
@@ -10,156 +10,45 @@
   <a href="https://github.com/anthroos/openexp/actions/workflows/tests.yml"><img src="https://github.com/anthroos/openexp/actions/workflows/tests.yml/badge.svg" alt="Tests"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.11+-blue.svg" alt="Python 3.11+"></a>
-  <a href="https://arxiv.org/abs/2603.07360"><img src="https://img.shields.io/badge/arXiv-2603.07360-b31b1b.svg" alt="arXiv"></a>
-  <img src="https://img.shields.io/badge/Made_for-Claude_Code-blueviolet" alt="Made for Claude Code">
+  <img src="https://img.shields.io/badge/Status-Pilot-orange" alt="Pilot stage">
+  <img src="https://img.shields.io/badge/Seeds-1-blue" alt="1 published seed">
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#how-it-works">How It Works</a> &middot;
+  <a href="#the-pipeline">Pipeline</a> &middot;
+  <a href="#publishing-an-experience">Publish</a> &middot;
   <a href="#mcp-tools">MCP Tools</a> &middot;
-  <a href="#configuration">Configuration</a> &middot;
-  <a href="#architecture">Architecture</a> &middot;
-  <a href="#contributing">Contributing</a>
+  <a href="#status">Status</a>
 </p>
 
 ---
 
-You wrote a skill: "how to work with CRM." Your agent follows it perfectly. But it doesn't know that approach A closed deals and approach B didn't. Tomorrow it'll do the same thing as yesterday — even if yesterday didn't work.
+## The Question
 
-**Skills say *how*. OpenExp teaches *what works*.**
+When you close a deal, ship a feature, or lose a client — *how did it happen*? Which decisions, in what order, against which context, on which hypotheses? Today's AI agents can't answer that. They follow skills and instructions perfectly, but they don't accumulate grounded knowledge about how outcomes actually arrived.
 
-Every outcome — commit, closed deal, resolved ticket — feeds back as a reward signal. Memories that led to results get higher Q-values and surface first next time. Noise sinks.
+OpenExp captures every human-AI decision as a step in a trajectory, links those steps into coherent journeys, and grades each journey retroactively when reality returns its verdict — a deal closes, a sprint ships, a payment lands. The result is a continuously growing labeled dataset of decisions tied to outcomes, ready to train domain-specific intuition.
 
-### Example: sales agent
+## What It Is Not
 
-Your agent sent 200 emails this month. Which formulations got replies? Which approaches closed deals? Skills don't know — there's no feedback loop.
+- **Not a Q-learning memory system.** We tried Q-values for 8 months. Mean Q-value across 27,000 memories was 0.006; 90% of memories never received any reward signal. Removed on 2026-04-26.
+- **Not Mem0 / Zep / Letta.** Those are storage layers. Storage is the easy part — semantic search alone doesn't tell you which memory actually led to a result.
+- **Not a replacement for skills or CLAUDE.md.** Those say *how* to do something. OpenExp captures *what happened* and *how it ended*.
 
-```yaml
-# .openexp.yaml in your sales project
-experience: sales
-```
+## The Methodological Core: No Pre-Labeling
 
-```
-1. Define your pipeline:  lead → contacted → qualified → proposal → won
-2. Work normally — Claude remembers client preferences, deal context, pricing
-3. Deal closes → all memories tagged with that client get rewarded
-4. Next similar deal → the insights that led to the close surface first
-```
+We do **not** hand-craft features at step level (`tone: urgent`, `signal: positive`, `hypothesis: probable`). Pre-labeling injects the labeler's biases and corrupts the eventual training signal. Same hygiene as credit scoring: collect rich features per applicant, label only the terminal outcome (paid / didn't), let the model learn what predicts repayment from data alone.
 
-After a month, your agent "knows" not just how to write emails — but which emails lead to results.
+Only terminal outcomes get labels:
 
-## The Problem
+- **`outcome`** — `closed_won` / `closed_lost` / `failed` / `abandoned`
+- **`grade`** — `0.0` to `1.0`, school-style
 
-Skills and CLAUDE.md solve the "agent doesn't remember" problem. But they're **static instructions** — written once, never learning from outcomes. Your agent follows the playbook perfectly, but doesn't know which plays actually work.
+Steps are stored raw. Authors annotate their own intent, hypotheses, and decisions ("I believed X at this point", "I chose Y because Z"). They do not label the *signal quality* of individual events — that's what the eventual model learns.
 
-Existing memory tools (Mem0, Zep, LangMem) add storage — but every memory is equally important. A two-month-old note about a deleted feature has the same weight as yesterday's critical architecture decision.
-
-**The missing piece:** there's no learning. No feedback loop from outcomes to retrieval quality.
-
-## The Solution
-
-OpenExp adds a **closed-loop learning system** with outcome-based rewards:
-
-```
-Session starts → recall memories (ranked by Q-value)
-    ↓
-Agent works → observations + decisions captured automatically
-    ↓
-Outcomes happen → deal closes, prediction verified, retrospective runs
-    ↓
-    WIN  → memories that contributed get rewarded (Q-values go up)
-    LOSS → memories that misled get penalized (Q-values go down)
-    ↓
-Next session → better memories surface first
-```
-
-### Five Reward Paths
-
-OpenExp doesn't rely on heuristics. It learns from **real outcomes** through five distinct reward paths:
-
-| Path | Trigger | Example |
-|------|---------|---------|
-| **Prediction** | `log_outcome` resolves a prediction | "Predicted client would accept proposal" → confirmed → +0.8 |
-| **Business** | CRM stage transition detected | Deal moved negotiation → won → +0.8 to tagged memories |
-| **Calibration** | Manual Q-value override | Expert judgment: "this insight was critical" → set q=0.9 |
-| **Retrospective** | Daily LLM analysis (Opus 4.6) | Cross-session patterns: promote undervalued, demote noise |
-| **Decision extraction** | Session end (async) | Opus 4.6 reads transcript, extracts strategic decisions |
-
-```
-add_memory(content="Acme prefers Google stack", client_id="comp-acme")
-    ↓
-... weeks of work ...
-    ↓
-CRM: Acme deal moves negotiation → won
-    ↓
-resolve_outcomes → finds memories tagged comp-acme → reward +0.8
-```
-
-After a few sessions, OpenExp learns what context actually helps you get work done.
-
-## Experience Library
-
-Memories capture individual moments. The Experience Library captures **entire journeys** — from first contact to final outcome — and distills them into reusable lessons.
-
-```
-Raw conversations (26K messages)
-    ↓ chunk into ~200K token batches
-18 chunks
-    ↓ Opus extracts topics per chunk
-170 topics
-    ↓ group across chunks by work thread
-36 threads (e.g., "Enterprise Chatbot Deal", "Document Automation Pipeline")
-    ↓ Opus labels each thread
-269 experience labels (context → actions → outcome → lesson)
-    ↓ stored in Qdrant as type="experience"
-Searchable via search_memory
-```
-
-Each experience label is a structured training triplet:
-
-```json
-{
-  "context": {
-    "situation": "Client needs automated report generation from 40-page template",
-    "constraints": ["Non-technical operators", "14 regional offices"],
-    "stakeholders": ["Client PM", "Builder (you)"]
-  },
-  "actions": [
-    {"what": "Built 7-stage pipeline with --auto flag", "why": "Remove human bottleneck"}
-  ],
-  "outcome": {
-    "result": "Pipeline generates documents end-to-end, demo successful",
-    "success": true
-  },
-  "lesson": {
-    "insight": "When human is bottleneck, make the agent the worker — give it tools + DoD",
-    "applies_when": "Manual data entry is blocking a pipeline that otherwise works"
-  }
-}
-```
-
-When a new situation arises, `search_memory` finds relevant experiences by matching the **situation**, not keywords — so "document automation client" finds lessons from a completely different industry project because the *pattern* matches.
-
-**Three levels of use:**
-1. **Now:** Experience layer as system prompt — skill queries Qdrant, formats advice
-2. **Soon:** Compress with [compresr.ai](https://compresr.ai) to fit all 269 labels in context
-3. **Later:** LoRA fine-tune on labeled data (context→actions→outcome format)
-
-## Why OpenExp?
-
-| Feature | OpenExp | Mem0 | Zep/Graphiti | LangMem |
-|---------|---------|------|-------------|---------|
-| **Learns from outcomes** | Yes — Q-learning from real business results | No | No | No |
-| **Process-aware** | Define pipeline stages with reward signals | No | No | No |
-| **Memory type filtering** | Reward only decisions/insights, not noise | No | No | No |
-| **Outcome-based rewards** | CRM deal closes → tagged memories get rewarded | No | No | No |
-| **Claude Code native** | Zero-config hooks, works out of the box | Requires integration | Requires integration | Requires integration |
-| **Local-first** | Qdrant + FastEmbed, no cloud, no API key for core | Cloud API | Cloud or self-hosted | Cloud API |
-| **Hybrid retrieval** | BM25 + vector + recency + importance + Q-value (5 signals) | Vector only | Graph + vector | Vector only |
-| **Privacy** | All data stays on your machine | Data sent to cloud | Depends on setup | Data sent to cloud |
-
-**The key difference:** skills say how. Memory tools store. OpenExp **learns what works** — from real outcomes.
+Casual analogy: kids in school don't get annotations on every homework problem. They turn in work, get a grade at the end of the term, and develop intuition over hundreds of grades.
 
 ## Quick Start
 
@@ -169,98 +58,109 @@ cd openexp
 ./setup.sh
 ```
 
-That's it. Open Claude Code in any project — it now has memory.
+That installs the four hooks into Claude Code, brings up Qdrant in Docker, and registers the MCP server.
 
-> [!TIP]
-> No API key needed for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional — it enables auto-enrichment (type classification, tags, validity windows) but everything works great without it.
+**Prerequisites:** Python 3.11+, Docker, jq.
 
-**Prerequisites:** Python 3.11+, Docker, jq
-
-## What You'll See
-
-When you open Claude Code after a few sessions:
-
-```
-# OpenExp Memory (Q-value ranked)
-Query: my-project | Monday 2026-03-22
-
-## Relevant Context
-[sim=0.82 q=0.73] Fixed auth bug by adding token refresh logic in api/auth.py
-[sim=0.76 q=0.65] Project uses FastAPI + PostgreSQL, deployed on Railway
-[sim=0.71 q=0.58] User prefers pytest with fixtures, not unittest
-```
-
-`q=0.73` means this memory consistently leads to productive sessions. `q=0.31` means it's been recalled but didn't help — it'll rank lower next time.
+No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
 
 ## How It Works
 
-Three hooks integrate with Claude Code automatically:
+Four hooks run automatically inside Claude Code:
 
 | Hook | When | What |
 |------|------|------|
-| **SessionStart** | Session opens | Searches Qdrant for relevant memories, injects top results as context |
-| **UserPromptSubmit** | Every message | Lightweight recall — adds relevant memories to each prompt |
-| **PostToolUse** | After Write/Edit/Bash | Captures what Claude does as observations (JSONL) |
-| **SessionEnd** | Session closes | Summary → ingest → reward → decision extraction (async) |
+| `SessionStart` | Session opens | Searches Qdrant for relevant memories, injects top results as context |
+| `UserPromptSubmit` | Every message | Lightweight per-prompt recall |
+| `PostToolUse` | After Write / Edit / Bash | Captures observations as JSONL |
+| `SessionEnd` | Session closes | Ingests transcript into Qdrant; extracts decisions via Opus 4.x (async) |
 
-After each session, Opus 4.6 reads the conversation transcript and extracts **decisions** (not actions) — strategic choices, insights, and commitments that have value for future similar situations. See [Decision Extraction](docs/decision-extraction.md).
+Retrieval ranks via semantic similarity + BM25 + recency. No magic numbers. No Q-value scoring component.
 
-The MCP server provides 16 tools for memory operations, introspection, and calibration.
+## The Pipeline
 
-### The Learning Loop
+When you decide to publish an experience — turn a real, terminal trajectory into a shareable artifact — two prompts do the work:
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                                                              │
-│   ┌─────────┐    search     ┌────────┐    inject    ┌─────┐ │
-│   │ Qdrant  │──────────────→│ Scorer │────────────→│ LLM │ │
-│   │ (384d)  │               │        │              │     │ │
-│   └────┬────┘               └────────┘              └──┬──┘ │
-│        │                    BM25 10%                    │    │
-│        │                    Vector 30%                  │    │
-│   Q-values                  Recency 15%            observations
-│   updated                   Importance 15%             │    │
-│        │                    Q-value 30%                 │    │
-│        │                                               │    │
-│   ┌────┴────┐   reward    ┌──────────┐   ingest   ┌───┴──┐ │
-│   │ Q-Cache │←────────────│ Reward   │←───────────│ JSONL│ │
-│   │  (LRU)  │             │ Tracker  │            │ obs  │ │
-│   └─────────┘             └──────────┘            └──────┘ │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
+1. **`prompts/anonymize.md`** — takes raw trajectory data (transcripts, emails, decisions) and produces an anonymized YAML trajectory. PII is replaced by category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<value:10k-100k>`, `<local_currency>`, `day_+5`) while structural features are preserved.
 
-### Q-Learning Details
+2. **`prompts/extract_experience.md`** — wraps the anonymized trajectory with the terminal outcome, grade, and grade reason; produces a final `experience.yaml` artifact ready to share.
 
-Every memory has a Q-value (starts at 0.0 — earn value from zero). Three layers capture different aspects:
+You run both prompts inside your own Claude Code, against your own Qdrant. Nothing is sent to a central server.
 
-| Layer | Weight | Measures |
-|-------|--------|----------|
-| **action** | 50% | Did recalling this help get work done? |
-| **hypothesis** | 20% | Was the information accurate? |
-| **fit** | 30% | Was it relevant to the context? |
+## Publishing an Experience
 
-Update rule:
+A published experience is three files in a UUID-named directory:
 
 ```
-Q_new = clamp(Q_old + α × reward, floor, ceiling)
-
-α = 0.25 (learning rate)
-reward ∈ [-1.0, 1.0] (productivity signal)
-floor = -0.5, ceiling = 1.0
+experiences/<uuid>/
+├── experience.yaml             # wrapper: applies_when, terminal, searchable_summary, metadata
+├── trajectory.anonymized.yaml  # full ordered timeline of N steps
+└── README.md                   # human-readable face for the marketplace
 ```
 
-Retrieval scoring combines five signals:
+`experience.yaml` shape (abridged from seed `d49e0997`):
+
+```yaml
+experience:
+  id: d49e0997-8455-4d3c-90ca-d6cf54d0f662
+  experience_type: acquisition
+  domain: sales
+  duration_days: 57
+
+  applies_when: |
+    A counterparty technical decision-maker books an inbound discovery
+    call and you are running a "free pilot work → commercial contract"
+    acquisition arc, with a counterparty-prepared NDA and a
+    local-jurisdiction e-signing platform.
+
+  terminal:
+    outcome: closed_won
+    grade: 1.0
+    grade_source: manual
+    grade_reason: |
+      "Successful case. Exactly how my business should look — a clean,
+      typical good case."
+    closed_at: day_+57
+
+  trajectory_ref: trajectory.anonymized.yaml
+
+  searchable_summary: |
+    An inbound discovery call from a counterparty technical decision-maker
+    led to a counterparty-prepared mutual NDA and a free pilot batch — a
+    sample dataset delivered 24 days after first contact. The counterparty
+    went silent for ~3 weeks after pilot delivery, then re-engaged and
+    introduced a project manager to own day-to-day. ...
+
+  metadata:
+    verified: false
+    license: MIT
+```
+
+### Install as a Claude Code skill
+
+A published experience is a **namespaced Claude Code skill**:
 
 ```
-score = 0.30 × vector_similarity    # semantic match
-      + 0.10 × bm25_score           # keyword match
-      + 0.15 × recency              # exponential decay (90-day half-life)
-      + 0.15 × importance           # type-weighted metadata
-      + 0.30 × q_value              # learned quality
+openexp:<author-handle>:<experience-slug>
 ```
 
-With 10% epsilon-greedy exploration — occasionally surfaces low-Q memories to give them another chance.
+Drop the pack into `~/.claude/skills/openexp:<author>:<slug>/` (rename the directory to the skill-namespaced form on copy). Claude Code auto-discovers it on the next session.
+
+```bash
+# Install the seed pack as a skill
+cp -r ~/openexp/experiences/d49e0997 \
+  ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
+```
+
+Two layers of identity:
+- **Author identity is public** — it signs the pack, like authorship on a research paper.
+- **Counterparty identity stays anonymized** — the skill name reveals who created the pack, never who they were dealing with.
+
+`SKILL.md` inside the pack is the entry point — it tells the user's Claude when to invoke, how to use the trajectory, and what not to do (no fabrication, no de-anonymization, attribution required).
+
+See `docs/skill-architecture.md` for the full naming convention, install flow, and design rationale.
+
+The `experiences/` directory in this repo is the seed of an eventual marketplace. The publication format works; seeds will accumulate. A directory of installable experiences is the eventual surface, not a built product today.
 
 ## MCP Tools
 
@@ -268,254 +168,52 @@ Five focused tools (hippocampus model — write everything, retrieve selectively
 
 | Tool | Description |
 |------|-------------|
-| `search_memory` | Hybrid search: BM25 + vector + recency + importance + Q-value reranking. Filter by type (e.g., `type="experience"` for experience labels) |
-| `add_memory` | Store memory with auto-enrichment (type, tags, validity). Supports `client_id` for entity tagging |
+| `search_memory` | Hybrid search: semantic similarity + BM25 + recency |
+| `add_memory` | Store a memory. Supports `client_id` for entity tagging |
 | `log_prediction` | Track a prediction for later outcome resolution |
-| `log_outcome` | Resolve prediction with reward → updates Q-values |
-| `memory_stats` | Collection stats, point counts by source/type, session count |
+| `log_outcome` | Resolve a prediction with an outcome |
+| `memory_stats` | Collection stats: point counts by source/type, session count |
 
 ## CLI
 
 ```bash
-# Search memories
-openexp search -q "authentication flow" -n 5
-
-# Search only experience labels
-openexp search -q "client demo" -n 5 -t experience
-
-# Ingest transcripts into Qdrant
-openexp ingest
-
-# Experience Library pipeline
-openexp chunk                    # chunk transcripts into ~200K token batches
-openexp topics                   # extract topics per chunk via LLM
-# Thread grouping + experience labeling via scripts/batch_label.py
-
-# Show stats
-openexp stats
-
-# Memory compaction (merge similar memories)
-openexp compact --dry-run
-
-# Manage experience profiles
-openexp experience list
-openexp experience show sales
-
-# Visualization
-openexp viz --replay latest      # session replay
+openexp search -q "stalled enterprise procurement" -n 5
+openexp ingest          # ingest pending transcripts into Qdrant
+openexp stats           # Q-cache + collection stats
 ```
 
 ## Configuration
 
-All settings via environment variables (`.env`):
+Environment variables (`.env`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `QDRANT_HOST` | `localhost` | Qdrant server host |
 | `QDRANT_PORT` | `6333` | Qdrant server port |
-| `QDRANT_API_KEY` | *(none)* | Optional: Qdrant auth (also passed to Docker) |
 | `OPENEXP_COLLECTION` | `openexp_memories` | Qdrant collection name |
-| `OPENEXP_DATA_DIR` | `~/.openexp/data` | Q-cache, predictions, retrieval logs |
-| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Where hooks write observations |
-| `OPENEXP_SESSIONS_DIR` | `~/.openexp/sessions` | Session summary files |
+| `OPENEXP_DATA_DIR` | `~/.openexp/data` | Predictions, retrieval logs |
+| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Hook output |
+| `OPENEXP_SESSIONS_DIR` | `~/.openexp/sessions` | Session summaries |
 | `OPENEXP_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embedding model (local, free) |
-| `OPENEXP_EMBEDDING_DIM` | `384` | Embedding dimensions |
-| `OPENEXP_INGEST_BATCH_SIZE` | `50` | Batch size for ingestion |
-| `OPENEXP_OUTCOME_RESOLVERS` | *(none)* | Outcome resolvers (format: `module:Class`) |
-| `OPENEXP_CRM_DIR` | *(none)* | CRM directory for CRMCSVResolver |
-| `ANTHROPIC_API_KEY` | *(none)* | Optional: enables LLM-based enrichment |
-| `OPENEXP_ENRICHMENT_MODEL` | `claude-haiku-4-5-20251001` | Model for auto-enrichment |
+| `ANTHROPIC_API_KEY` | *(optional)* | Required only for the publishing pipeline |
 
-**Anthropic API key is optional.** Without it, memories get default metadata. With it, each memory is automatically classified (type, importance, tags, validity window).
+## Status
 
-## Architecture
+**Pilot. Architecture freeze landed 2026-04-26.** First experience seed published: `experiences/d49e0997/` — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
 
-```
-openexp/
-├── core/                       # Q-learning memory engine
-│   ├── q_value.py              # Q-learning: QCache, QValueUpdater, QValueScorer
-│   ├── direct_search.py        # FastEmbed (384d) + Qdrant vector search
-│   ├── hybrid_search.py        # BM25 keyword + vector + Q-value hybrid scoring
-│   ├── scoring.py              # Composite relevance: similarity × recency × importance
-│   ├── lifecycle.py            # 8-state memory lifecycle (active→confirmed→archived→...)
-│   ├── experience.py           # Per-domain Q-value contexts (default, sales, dealflow)
-│   ├── enrichment.py           # Auto-metadata extraction (LLM or defaults)
-│   ├── explanation.py          # L4: LLM-generated reward explanations
-│   ├── reward_log.py           # L3: cold storage of reward events
-│   ├── compaction.py           # Memory merging/clustering
-│   ├── v7_extensions.py        # Lifecycle filter + hybrid scoring integration
-│   └── config.py               # Environment-based configuration
-│
-├── ingest/                     # Observation → Qdrant pipeline
-│   ├── observation.py          # JSONL observations → embeddings → Qdrant
-│   ├── session_summary.py      # Session .md files → memory objects
-│   ├── reward.py               # Reward utilities (used by outcome resolvers)
-│   ├── retrieval_log.py        # Closed-loop: which memories were recalled
-│   ├── watermark.py            # Idempotent ingestion tracking
-│   ├── filters.py              # Filter trivial observations
-│   └── extract_decisions.py    # Opus 4.6 decision extraction from transcripts
-│
-├── resolvers/                  # Outcome resolvers (pluggable)
-│   └── crm_csv.py              # CRM CSV stage transition → reward events
-│
-├── data/experiences/           # Shipped experience configs
-│   ├── default.yaml            # Software engineering
-│   ├── sales.yaml              # Sales & outreach
-│   └── dealflow.yaml           # Deal pipeline
-│
-├── outcome.py                  # Outcome resolution framework
-│
-├── hooks/                      # Claude Code integration
-│   ├── session-start.sh        # Inject Q-ranked memories at startup
-│   ├── user-prompt-recall.sh   # Per-message context recall
-│   ├── post-tool-use.sh        # Capture observations from tool calls
-│   └── session-end.sh          # Summary + ingest + reward (closes the loop)
-│
-├── mcp_server.py               # MCP STDIO server (16 tools, JSON-RPC 2.0)
-├── reward_tracker.py           # Prediction → outcome → Q-value updates
-├── viz.py                      # Visualization + session replay
-└── cli.py                      # CLI: search, ingest, stats, viz, compact, experience
-```
+Honest about what isn't done:
+- The marketplace UI is just a directory in this repo. No web surface yet.
+- Anonymization is conservative but not bulletproof for readers with deep domain knowledge.
+- Schema may iterate — author-annotation fields (`author_intent`, `author_hypothesis`, `author_decision`) are a likely near-term addition.
+- The eventual ML model trained on this corpus does not exist yet. ≥30 graded trajectories first.
 
-### Memory Lifecycle
-
-Memories move through 8 states to prevent stale context:
-
-```
-active ──→ confirmed ──→ outdated ──→ archived ──→ deleted
-  │            │                          ↑
-  ├──→ contradicted ──────────────────────┘
-  ├──→ merged
-  └──→ superseded
-```
-
-Only `active` and `confirmed` memories are returned in searches. Status weights affect scoring: `confirmed=1.2×`, `active=1.0×`, `outdated=0.5×`, `archived=0.3×`.
-
-### Data Flow
-
-```
-PostToolUse hook                                  SessionStart hook
-      │                                                 ↑
-      ↓                                                 │
-~/.openexp/observations/*.jsonl                Qdrant search (top 10)
-      │                                          + Q-value reranking
-      ↓                                                 ↑
-SessionEnd hook ──→ summary .md                         │
-      │                                                 │
-      ↓ (async)                                         │
-openexp ingest ──→ FastEmbed ──→ Qdrant ─────────────────┘
-      │                            ↑
-      ↓                            │
-Q-Cache (q_cache.json) ←── reward signal ←── outcomes (CRM, predictions, retro)
-```
-
-## Technical Details
-
-| Component | Choice | Why |
-|-----------|--------|-----|
-| **Embeddings** | FastEmbed (BAAI/bge-small-en-v1.5) | Local, free, no API key, 384 dimensions |
-| **Vector DB** | Qdrant | Fast ANN search, payload filtering, Docker-ready |
-| **Q-Cache** | In-memory LRU (100K entries) | Fast lookup, delta-based persistence for concurrent sessions |
-| **Transport** | MCP STDIO (JSON-RPC 2.0) | Native Claude Code integration |
-| **Hooks** | Bash scripts | Minimal dependencies, shell-level integration |
-
-## Troubleshooting
-
-**Docker / Qdrant won't start:**
-```bash
-# Check Docker is running
-docker info
-
-# Check Qdrant container
-docker ps -a | grep openexp-qdrant
-docker logs openexp-qdrant
-```
-
-**Hooks not firing:**
-```bash
-# Verify hooks are registered
-cat ~/.claude/settings.local.json | jq '.hooks'
-
-# Re-run setup to fix registration
-./setup.sh
-```
-
-**No memories appearing:**
-Memories need to be ingested first. After a few Claude Code sessions:
-```bash
-openexp ingest --dry-run   # preview what will be ingested
-openexp ingest             # ingest into Qdrant
-openexp stats              # check Q-cache state
-```
-
-## Experiences — Define Your Process
-
-Not everyone writes code. An **Experience** defines what "productive" means for your workflow, including pipeline stages and which memory types matter.
-
-| Experience | Process | Top Signals |
-|------------|---------|-------------|
-| `default` | backlog → in_progress → review → merged → deployed | commits, PRs, tests |
-| `sales` | lead → contacted → qualified → proposal → negotiation → won | decisions, emails, follow-ups |
-| `dealflow` | lead → discovery → nda → proposal → negotiation → invoice → paid | proposals, invoices, payments |
-
-Switch with one env var:
-```bash
-export OPENEXP_EXPERIENCE=dealflow
-```
-
-Each experience also controls **which memory types get rewarded** — sales rewards decisions and insights, not raw tool actions. This means the system learns faster because it focuses on the signal, not the noise.
-
-**Create your own** with the interactive wizard:
-```bash
-openexp experience create
-# Pick a process type (dev/sales/support/content)
-# Customize stages, signal weights, memory type filters
-```
-
-See the [Experiences Guide](docs/experiences.md) for full details.
-
-## Documentation
-
-Detailed docs are available in the [`docs/`](docs/) directory:
-
-- [How It Works](docs/how-it-works.md) — the 4-phase learning cycle
-- [Decision Extraction](docs/decision-extraction.md) — Opus 4.6 extracts decisions, not actions
-- [Storage System](docs/storage-system.md) — 5-level pyramid (L0-L4), all 5 reward paths
-- [Experiences](docs/experiences.md) — domain-specific reward profiles (create your own)
-- [Architecture](docs/architecture.md) — system design and data flow
-- [Configuration](docs/configuration.md) — all environment variables and options
+See `docs/redesign-2026-04-26.md` for the full architecture freeze and `docs/claude-design-brief.md` for the v2 product framing.
 
 ## Contributing
 
-This project is in early stages. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and workflow.
+This project is in early stages. See `CONTRIBUTING.md` for setup and workflow.
 
-Key areas where help is welcome:
-
-- **New experiences** — domain-specific reward profiles (DevOps, writing, research, etc.)
-- **Outcome resolvers** — new integrations beyond CRM (Jira, Linear, GitHub Issues)
-- **Multi-project learning** — sharing relevant context across projects
-- **Benchmarks** — measuring retrieval quality improvement over time
-- **Automated lifecycle transitions** — contradiction detection, staleness heuristics
-
-## Research
-
-OpenExp implements value-driven memory retrieval inspired by [MemRL](https://arxiv.org/abs/2404.09560), adapted for episodic memory in AI coding assistants.
-
-Core insight: treating memory retrieval as a reinforcement learning problem — where the reward signal comes from real session outcomes — produces better context selection than similarity-only search.
-
-## Citation
-
-If you use OpenExp in your research, please cite:
-
-```bibtex
-@article{pasichnyk2026yerkes,
-  title={The Yerkes-Dodson Curve for AI Agents: Optimal Pressure in Multi-Agent Survival Games},
-  author={Pasichnyk, Ivan},
-  journal={arXiv preprint arXiv:2603.07360},
-  year={2026},
-  url={https://arxiv.org/abs/2603.07360}
-}
-```
+The most useful contribution right now is **publishing a real experience**. Take one of your own closed trajectories, run it through `prompts/anonymize.md` and `prompts/extract_experience.md`, and open a PR adding a new directory under `experiences/`.
 
 ## License
 
