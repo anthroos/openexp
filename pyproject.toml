@@ -1,7 +1,7 @@
 [project]
 name = "openexp"
 version = "0.1.0"
-description = "Q-learning memory for Claude Code — your AI learns from experience"
+description = "Hippocampus for AI agents — capture trajectories raw, grade only on terminal outcomes"
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
@@ -29,6 +29,10 @@ openexp-mcp = "openexp.mcp_server:main"
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["openexp*"]
+exclude = ["tests*", "prompts*", "experiences*", "docs*", "scripts*", "benchmarks*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
