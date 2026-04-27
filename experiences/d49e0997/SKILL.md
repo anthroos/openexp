@@ -21,7 +21,7 @@ Do **not** invoke for outbound cold outreach, for procurement-driven enterprise 
 
 ## How the pack informs your replies
 
-This pack is **silent reference**. Read all four data files (`experience.yaml`, `trajectory.anonymized.yaml`, `steps.indexable.jsonl`, `README.md`) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**.
+This pack is **silent reference**. Read the three data files (`experience.yaml`, `trajectory.anonymized.yaml`, `README.md`) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**.
 
 1. **Map the user's situation to one specific step.** Find the closest `relative_day` to where they are in their own arc.
 2. **Reply in the user's natural conversation register.** A two-sentence answer in their language is almost always the right answer.
@@ -73,7 +73,6 @@ In verbose mode you may produce: pipeline match tables, day-by-day step quotes, 
 |------|---------|
 | `experience.yaml` | Wrapper: id, applies_when, terminal block, searchable_summary, metadata |
 | `trajectory.anonymized.yaml` | Ordered timeline of 26 steps, anonymized to category tokens |
-| `steps.indexable.jsonl` | Per-step records for retrieval (one JSON object per line) |
 | `README.md` | Human-readable face |
 | `SKILL.md` | This file — Claude entry point |
 

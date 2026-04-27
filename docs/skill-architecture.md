@@ -29,14 +29,13 @@ openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
 
 ## Filesystem layout
 
-A published experience pack ships as a directory containing five files:
+A published experience pack ships as a directory containing four files:
 
 ```
 openexp:<author>:<slug>/
 ├── SKILL.md                       # Claude entry point — read first when skill is invoked
 ├── experience.yaml                 # wrapper: applies_when, terminal, searchable_summary
 ├── trajectory.anonymized.yaml      # ordered timeline of N steps, anonymized
-├── steps.indexable.jsonl           # one JSON per line, per-step records for retrieval
 └── README.md                       # human-readable face
 ```
 
@@ -78,7 +77,7 @@ Claude Code auto-discovers the skill on next session start. No registration step
 
 When a user is working on a task that matches a pack's `applies_when`, two paths surface the pack:
 
-1. **Auto-surface via search.** The hooks injected by OpenExp run `search_memory` against the user's query. Step-level records (`steps.indexable.jsonl` content) are indexed in the user's local Qdrant when they install the pack. Pattern queries pull matching steps; the parent SKILL.md gets pulled with the step context.
+1. **Skill-list discovery.** Claude Code auto-discovers the namespaced skill directory and lists it among available skills. The user references the pack by name, by tag, or by describing a situation that matches its `applies_when` — Claude reads the pack files into context. **Auto-firing on situation patterns alone, without the user naming the pack, is on the roadmap, not shipped.** Embedding-based retrieval over per-step records is also future work — today, matching is read-time, not search-time.
 
 2. **Explicit invocation.** The user types `/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot` (or whatever invocation surface Claude Code exposes for namespaced skills) when they know they want this specific pack.
 
