@@ -101,39 +101,67 @@ TOOLS = [
     },
     {
         "name": "log_prediction",
-        "description": "Log an agent prediction for tracking and Q-value learning. Returns prediction_id for later resolution.",
+        "description": (
+            "Log a pack-grounded prediction. REQUIRED whenever the assistant cites "
+            "a specific relative_day of an installed experience pack as the basis "
+            "for a real-world action recommendation. Captures: which step was cited, "
+            "which case it applies to, what was recommended (and what was explicitly "
+            "NOT recommended), the observable signal that resolves the prediction, "
+            "and the window in days. Returns prediction_id for later log_outcome."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "prediction": {"type": "string", "description": "What the agent predicts will happen"},
-                "confidence": {"type": "number", "default": 0.5, "description": "Agent confidence [0, 1]"},
-                "strategic_value": {"type": "number", "default": 0.5, "description": "How important [0, 1]"},
+                "pack_id": {"type": "string", "description": "The pack's slug (e.g. 'inbound-acquisition-with-free-pilot')"},
+                "pack_author": {"type": "string", "description": "The pack's author handle (e.g. 'ivan-pasichnyk')"},
+                "cited_step": {"type": "string", "description": "The exact relative_day cited (e.g. 'day +57')"},
+                "case_id": {"type": "string", "description": "External reference for this case (CRM lead_id, ticket ID, etc.) — opaque string"},
+                "applied_action": {"type": "string", "description": "What the assistant recommended TO do, derived from the cited step"},
+                "prevented_action": {"type": "string", "description": "What the assistant recommended NOT to do (negative-space prediction). Optional but encouraged — often the higher-value half."},
+                "expected_signal": {"type": "string", "description": "Observable signal that resolves this prediction (e.g. 'counterparty signs both sides')"},
+                "expected_window_days": {"type": "integer", "description": "Deadline in days for log_outcome to be called"},
+                "notes": {"type": "string", "description": "Optional free-text context"},
+
+                "prediction": {"type": "string", "description": "[deprecated] Free-text prediction. Use applied_action + expected_signal instead. Accepted for backward compat."},
+                "confidence": {"type": "number", "description": "[deprecated, removed from required schema 2026-04-27 — Claude confidence is uncalibrated until ≥30 outcome datapoints. Accepted for backward compat.]"},
+                "strategic_value": {"type": "number", "description": "[deprecated, accepted for backward compat]"},
                 "memory_ids_used": {
                     "type": "array",
                     "items": {"type": "string"},
                     "default": [],
-                    "description": "Memory IDs that were retrieved for this prediction",
+                    "description": "Memory IDs that were retrieved for this prediction (for legacy Q-value updates on log_outcome)",
                 },
-                "client_id": {"type": "string", "description": "Associated client ID"},
+                "client_id": {"type": "string", "description": "[deprecated alias for case_id, accepted for backward compat]"},
             },
-            "required": ["prediction"],
+            # Required only on the new path. If `prediction` is provided we treat the
+            # call as legacy and skip the new-path required check (handled in dispatcher).
+            "required": [],
         },
     },
     {
         "name": "log_outcome",
-        "description": "Resolve a prediction with outcome and reward. Updates Q-values for all memories used.",
+        "description": (
+            "Resolve a prediction with observed facts. New path: provide actual_signal "
+            "and days_to_resolve — interpretation-free record of what happened. Legacy "
+            "path: provide outcome + reward to keep updating Q-values for memory_ids_used "
+            "from older predictions. The two paths can coexist."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "prediction_id": {"type": "string", "description": "ID from log_prediction"},
-                "outcome": {"type": "string", "description": "What actually happened"},
-                "reward": {"type": "number", "description": "Reward signal [-1.0, 1.0]"},
+                "actual_signal": {"type": "string", "description": "What was observed — raw fact, no interpretation. Required on the new path."},
+                "days_to_resolve": {"type": "integer", "description": "How many days from prediction to resolution. Required on the new path."},
+                "notes": {"type": "string", "description": "Optional free-text context (e.g. unexpected events)"},
+
+                "outcome": {"type": "string", "description": "[deprecated alias for actual_signal — accepted for backward compat]"},
+                "reward": {"type": "number", "description": "[deprecated — only used on the legacy Q-update path. Omit on the new path.]"},
                 "cause_category": {
                     "type": "string",
-                    "description": "Why strategy succeeded/failed: execution_failure, strategy_failure, qualification_failure, hypothesis_failure, external, competition",
+                    "description": "[deprecated, accepted for backward compat]",
                 },
             },
-            "required": ["prediction_id", "outcome", "reward"],
+            "required": ["prediction_id"],
         },
     },
     {
@@ -225,26 +253,71 @@ def handle_request(request: dict) -> dict:
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
 
         elif tool_name == "log_prediction":
+            # New-path required fields (pack-grounded prediction).
+            new_path_fields = (
+                "pack_id", "pack_author", "cited_step", "case_id",
+                "applied_action", "expected_signal", "expected_window_days",
+            )
+            has_new_path = all(f in args for f in new_path_fields)
+            has_legacy = "prediction" in args
+            if not has_new_path and not has_legacy:
+                missing = [f for f in new_path_fields if f not in args]
+                raise _ErrorResponse(
+                    -32602,
+                    "Missing required fields. Provide either the new-path fields "
+                    f"({', '.join(new_path_fields)}) or the legacy `prediction` field. "
+                    f"Missing on new path: {missing}",
+                )
+
             pred_id = reward_tracker.log_prediction(
-                prediction=args["prediction"][:MAX_CONTENT_LENGTH],
-                confidence=_clamp(args.get("confidence", 0.5), 0.0, 1.0),
-                strategic_value=_clamp(args.get("strategic_value", 0.5), 0.0, 1.0),
+                # New-path
+                pack_id=args.get("pack_id"),
+                pack_author=args.get("pack_author"),
+                cited_step=args.get("cited_step"),
+                case_id=args.get("case_id") or args.get("client_id"),
+                applied_action=args.get("applied_action"),
+                prevented_action=args.get("prevented_action"),
+                expected_signal=args.get("expected_signal"),
+                expected_window_days=args.get("expected_window_days"),
+                notes=args.get("notes"),
+                # Legacy
+                prediction=(args.get("prediction") or "")[:MAX_CONTENT_LENGTH] or None,
+                confidence=(
+                    _clamp(args["confidence"], 0.0, 1.0) if "confidence" in args else None
+                ),
+                strategic_value=(
+                    _clamp(args["strategic_value"], 0.0, 1.0) if "strategic_value" in args else None
+                ),
                 memory_ids_used=args.get("memory_ids_used", []),
                 client_id=args.get("client_id"),
             )
             return {"content": [{"type": "text", "text": json.dumps({"prediction_id": pred_id})}]}
 
         elif tool_name == "log_outcome":
-            for field in ("prediction_id", "outcome", "reward"):
-                if field not in args:
-                    raise _ErrorResponse(-32602, f"Missing required field: {field}")
+            if "prediction_id" not in args:
+                raise _ErrorResponse(-32602, "Missing required field: prediction_id")
+
+            # New path: actual_signal + days_to_resolve. Legacy: outcome + reward.
+            actual_signal = args.get("actual_signal") or args.get("outcome")
+            if not actual_signal:
+                raise _ErrorResponse(
+                    -32602,
+                    "Provide either `actual_signal` (new path) or `outcome` (legacy).",
+                )
+
+            has_legacy_reward = "reward" in args
+
             result = reward_tracker.log_outcome(
                 prediction_id=args["prediction_id"],
-                outcome=args["outcome"][:MAX_CONTENT_LENGTH],
-                reward=_clamp(args["reward"], -1.0, 1.0),
+                actual_signal=actual_signal[:MAX_CONTENT_LENGTH],
+                days_to_resolve=args.get("days_to_resolve"),
+                notes=args.get("notes"),
+                # Legacy Q-update path
+                reward=_clamp(args["reward"], -1.0, 1.0) if has_legacy_reward else None,
                 cause_category=args.get("cause_category"),
             )
-            q_cache.save_delta(DELTAS_DIR, SESSION_ID)
+            if has_legacy_reward:
+                q_cache.save_delta(DELTAS_DIR, SESSION_ID)
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
 
         elif tool_name == "memory_stats":

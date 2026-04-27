@@ -170,9 +170,42 @@ Five focused tools (hippocampus model — write everything, retrieve selectively
 |------|-------------|
 | `search_memory` | Hybrid search: semantic similarity + BM25 + recency |
 | `add_memory` | Store a memory. Supports `client_id` for entity tagging |
-| `log_prediction` | Track a prediction for later outcome resolution |
-| `log_outcome` | Resolve a prediction with an outcome |
+| `log_prediction` | Log a pack-grounded prediction. Required when an installed experience pack cites a specific `relative_day` as the basis for an action recommendation. |
+| `log_outcome` | Resolve a prediction with the observed signal — interpretation-free record. |
 | `memory_stats` | Collection stats: point counts by source/type, session count |
+
+### Prediction / outcome instrumentation
+
+Pack-grounded predictions are how the system learns whether a published experience pack actually moves real-world outcomes. Without prediction/outcome pairs, pack value cannot be measured against any baseline, and any future experiment (cross-pack voting, embedding retrieval, new packs from new authors) is unfalsifiable.
+
+**Trigger criterion is sharp.** Logging fires only when the assistant cites a pack's specific `relative_day` as the reason for an action recommendation. No day-citation → no log. Description of a situation without a recommendation → no log. This keeps the dataset honest and the cost low.
+
+**`log_prediction` (new path, schema_version 2)**
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `pack_id` | yes | The pack's slug |
+| `pack_author` | yes | Author handle |
+| `cited_step` | yes | The exact `day +N` cited |
+| `case_id` | yes | External reference (CRM lead_id, ticket ID, deal ID — opaque string) |
+| `applied_action` | yes | What was recommended TO do |
+| `expected_signal` | yes | Observable resolution |
+| `expected_window_days` | yes | Deadline in days for `log_outcome` |
+| `prevented_action` | optional | Negative-space prediction — what was recommended NOT to do (often the higher-value half) |
+| `notes` | optional | Free-text context |
+
+**`log_outcome` (new path, schema_version 2)**
+
+| Field | Required | Purpose |
+|-------|----------|---------|
+| `prediction_id` | yes | ID returned from `log_prediction` |
+| `actual_signal` | yes | What was observed — raw fact, no interpretation |
+| `days_to_resolve` | yes | How many days from prediction to resolution |
+| `notes` | optional | Free-text, e.g. unexpected events |
+
+**What's deliberately NOT in the schema:** `confidence` (Claude-side confidence is uncalibrated until ≥30 outcome datapoints), `alternative_action_if_no_pack` and `predicted_outcome_alternative` (the same Claude that writes the prediction would invent the counterfactual, biased toward "the pack helped" — real ablation needs a pack-blind run, separate track).
+
+**Backward compatibility.** The legacy schema (`prediction`, `confidence`, `strategic_value`, `memory_ids_used`) is still accepted by both tools. Calling `log_outcome` with `outcome` + `reward` continues to update Q-values for `memory_ids_used` exactly as before. New-path entries are marked `schema_version: 2` in the JSONL row.
 
 ## CLI
 

@@ -55,6 +55,32 @@ Switch to structured output **only** when the user explicitly asks. Trigger phra
 
 In verbose mode you may produce: pipeline match tables, day-by-day step quotes, structured "options" lists. After answering — collapse back to quiet mode for the next reply.
 
+## Instrumentation (mandatory)
+
+When you cite a specific `relative_day` of this pack as the basis for a real-world action recommendation, **immediately call `log_prediction`** with:
+
+- `pack_id` = `inbound-acquisition-with-free-pilot`
+- `pack_author` = `ivan-pasichnyk`
+- `cited_step` = the exact `day +N` you cited
+- `case_id` = external reference (e.g. CRM `lead_id`, ticket ID, deal ID — opaque string)
+- `applied_action` = what you recommended TO do, derived from the cited step
+- `prevented_action` = what you recommended NOT to do (negative-space prediction — often the higher-value half; surface it explicitly)
+- `expected_signal` = an observable resolution (e.g. "counterparty signs both sides")
+- `expected_window_days` = deadline in days for the outcome call
+
+When the window passes, **call `log_outcome`** with observed facts only:
+
+- `prediction_id` = the ID returned from `log_prediction`
+- `actual_signal` = what was observed — raw fact, no interpretation
+- `days_to_resolve` = how many days from prediction to resolution
+- `notes` = optional, only for unexpected events
+
+**Do not** interpret outcomes. Do not assign `reward`. Do not add `confidence`. Aggregate analysis happens later, off-call, with population baselines.
+
+This is non-optional. Without prediction/outcome pairs, the pack's value cannot be measured, and any future improvement (new packs, voting, retrieval upgrade) is unfalsifiable.
+
+**Trigger criterion:** logging fires only when you cite `relative_day` as the reason for an action recommendation. If you don't cite a day, you don't log. If you only describe the situation without recommending, you don't log.
+
 ## What NOT to do
 
 - **Do not claim the author's experience as your own analysis.** Always frame as "Ivan's trajectory shows..." or "On day +X of the author's pack...". Attribution is non-negotiable.

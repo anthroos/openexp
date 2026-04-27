@@ -103,42 +103,110 @@ class RewardTracker:
 
     def log_prediction(
         self,
-        prediction: str,
-        confidence: float,
-        strategic_value: float,
-        memory_ids_used: List[str],
+        # New-path (pack-grounded) — None on legacy calls
+        pack_id: Optional[str] = None,
+        pack_author: Optional[str] = None,
+        cited_step: Optional[str] = None,
+        case_id: Optional[str] = None,
+        applied_action: Optional[str] = None,
+        prevented_action: Optional[str] = None,
+        expected_signal: Optional[str] = None,
+        expected_window_days: Optional[int] = None,
+        notes: Optional[str] = None,
+        # Legacy — None on new-path calls
+        prediction: Optional[str] = None,
+        confidence: Optional[float] = None,
+        strategic_value: Optional[float] = None,
+        memory_ids_used: Optional[List[str]] = None,
         client_id: Optional[str] = None,
     ) -> str:
-        """Log an agent prediction for later resolution. Returns prediction ID."""
-        pred_id = f"pred_{uuid.uuid4().hex[:8]}"
+        """Log a prediction. Two paths:
 
-        entry = {
+        - New (pack-grounded): pack_id + cited_step + applied_action + expected_signal +
+          expected_window_days are the substance; case_id is the external reference.
+        - Legacy (free-text): `prediction` plus optional confidence/strategic_value/
+          memory_ids_used. Kept so existing callers don't break.
+
+        Returns prediction ID. Schema fields are stored as provided; downstream readers
+        should treat absent fields as null, not zero.
+        """
+        pred_id = f"pred_{uuid.uuid4().hex[:8]}"
+        memory_ids_used = list(memory_ids_used) if memory_ids_used else []
+
+        entry: Dict[str, Any] = {
             "id": pred_id,
             "timestamp": _now_iso(),
-            "prediction": prediction,
-            "confidence": confidence,
-            "strategic_value": strategic_value,
-            "memory_ids_used": memory_ids_used,
-            "client_id": client_id,
+            "schema_version": 2,
             "status": "pending",
         }
+
+        # New-path payload
+        if pack_id is not None:
+            entry["pack_id"] = pack_id
+        if pack_author is not None:
+            entry["pack_author"] = pack_author
+        if cited_step is not None:
+            entry["cited_step"] = cited_step
+        if case_id is not None:
+            entry["case_id"] = case_id
+        if applied_action is not None:
+            entry["applied_action"] = applied_action
+        if prevented_action is not None:
+            entry["prevented_action"] = prevented_action
+        if expected_signal is not None:
+            entry["expected_signal"] = expected_signal
+        if expected_window_days is not None:
+            entry["expected_window_days"] = expected_window_days
+        if notes is not None:
+            entry["notes"] = notes
+
+        # Legacy fields — kept verbatim for backward compatibility
+        if prediction is not None:
+            entry["prediction"] = prediction
+        if confidence is not None:
+            entry["confidence"] = confidence
+        if strategic_value is not None:
+            entry["strategic_value"] = strategic_value
+        entry["memory_ids_used"] = memory_ids_used
+        if client_id is not None and case_id is None:
+            entry["case_id"] = client_id  # legacy alias surfaces as case_id
+        if client_id is not None:
+            entry["client_id"] = client_id
 
         with self._lock:
             _append_jsonl(self.predictions_file, entry)
             self._predictions.append(entry)
 
-        logger.info("Logged prediction %s: %s (confidence=%.2f)", pred_id, prediction[:80], confidence)
+        log_label = applied_action or prediction or "(no description)"
+        logger.info("Logged prediction %s: %s", pred_id, log_label[:80])
         return pred_id
 
     def log_outcome(
         self,
         prediction_id: str,
-        outcome: str,
-        reward: float,
+        # New path
+        actual_signal: Optional[str] = None,
+        days_to_resolve: Optional[int] = None,
+        notes: Optional[str] = None,
+        # Legacy path (Q-update)
+        outcome: Optional[str] = None,
+        reward: Optional[float] = None,
         source: str = "human",
         cause_category: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Log an outcome for a prediction and update Q-values."""
+        """Log an outcome. Two paths:
+
+        - New (interpretation-free): provide actual_signal + days_to_resolve. The
+          observation is recorded; no Q-update happens. Reward derivation is for
+          aggregate analysis later, not per-call.
+        - Legacy: provide outcome + reward to keep updating Q-values for
+          memory_ids_used from older predictions.
+        """
+        # Resolve which path we're on. If actual_signal is missing, fall back to legacy `outcome`.
+        observed_signal = actual_signal if actual_signal is not None else outcome
+        if observed_signal is None:
+            return {"error": "Provide either actual_signal (new path) or outcome (legacy)."}
+
         if cause_category and cause_category not in CAUSE_CATEGORIES:
             logger.warning("Unknown cause_category: %s", cause_category)
 
@@ -155,14 +223,24 @@ class RewardTracker:
             if pred["status"] != "pending":
                 return {"error": f"Prediction {prediction_id} already resolved"}
 
-            outcome_entry = {
+            outcome_entry: Dict[str, Any] = {
                 "prediction_id": prediction_id,
                 "timestamp": _now_iso(),
-                "outcome": outcome,
-                "reward": reward,
+                "actual_signal": observed_signal,
+                "schema_version": 2,
                 "source": source,
-                "cause_category": cause_category,
             }
+            if days_to_resolve is not None:
+                outcome_entry["days_to_resolve"] = days_to_resolve
+            if notes is not None:
+                outcome_entry["notes"] = notes
+            # Legacy fields, only when supplied
+            if reward is not None:
+                outcome_entry["reward"] = reward
+            if cause_category is not None:
+                outcome_entry["cause_category"] = cause_category
+            # Carry over `outcome` key for callers that still grep for it
+            outcome_entry["outcome"] = observed_signal
             _append_jsonl(self.outcomes_file, outcome_entry)
 
             pred["status"] = "resolved"
@@ -170,22 +248,37 @@ class RewardTracker:
             memory_ids = list(pred.get("memory_ids_used", []))
             self._rewrite_predictions_file()
 
-        # Update Q-values (outside lock — memory_ids copied inside lock)
+        # New path stops here: no Q-update, no cold-storage reward log.
+        if reward is None:
+            logger.info(
+                "Outcome for %s recorded (interpretation-free): %s",
+                prediction_id, observed_signal[:80],
+            )
+            return {
+                "prediction_id": prediction_id,
+                "actual_signal": observed_signal,
+                "days_to_resolve": days_to_resolve,
+                "memories_updated": 0,
+                "schema_version": 2,
+            }
+
+        # Legacy path — keep Q-update behavior for older predictions
         reward_ctx = _build_prediction_reward_context(
-            pred.get("prediction", ""), outcome, reward, cause_category,
+            pred.get("prediction") or pred.get("applied_action") or "",
+            observed_signal, reward, cause_category,
         )
 
         # L3 cold storage
         rwd_id = generate_reward_id()
         cold_context = {
             "prediction_id": prediction_id,
-            "prediction": pred.get("prediction", ""),
-            "outcome": outcome,
+            "prediction": pred.get("prediction") or pred.get("applied_action", ""),
+            "outcome": observed_signal,
             "confidence": pred.get("confidence"),
             "strategic_value": pred.get("strategic_value"),
             "cause_category": cause_category,
             "source": source,
-            "client_id": pred.get("client_id"),
+            "client_id": pred.get("client_id") or pred.get("case_id"),
         }
 
         # L4: read first memory's Q before update
