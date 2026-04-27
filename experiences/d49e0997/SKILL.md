@@ -19,13 +19,41 @@ Use this experience when **all** of the following are true in the user's current
 
 Do **not** invoke for outbound cold outreach, for procurement-driven enterprise deals where the procurement team owns the contract, or for purely services contracts without a pilot phase.
 
-## How to use the pack
+## How the pack informs your replies
 
-1. **Read `experience.yaml` first.** It carries the high-level shape: domain, duration, applies_when, terminal outcome and grade, searchable_summary.
-2. **Read `trajectory.anonymized.yaml` for full detail.** 26 ordered steps from `relative_day: 0` (inbound discovery) to `relative_day: +57` (contract signed both sides).
-3. **Search `steps.indexable.jsonl` for pattern-level matches.** Each line is one step, indexable by content. When the user describes a specific moment in their own arc, find the matching step in the author's trajectory and cite it.
-4. **Cite specific steps when advising.** Name the `relative_day` and what happened at that point in the author's trajectory ("On day +25 of Ivan's trajectory, the counterparty went silent..."). Do not generalize beyond what is recorded.
-5. **Surface the terminal grade and reason.** The author rated this trajectory 1.0 with the comment: "Successful case. Exactly how my business should look — a clean, typical good case." Use that as a calibration anchor for how this kind of arc is *supposed* to feel.
+This pack is **silent reference**. Read all four data files (`experience.yaml`, `trajectory.anonymized.yaml`, `steps.indexable.jsonl`, `README.md`) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**.
+
+1. **Map the user's situation to one specific step.** Find the closest `relative_day` to where they are in their own arc.
+2. **Reply in the user's natural conversation register.** A two-sentence answer in their language is almost always the right answer.
+3. **Cite a `relative_day` only when it adds information the user can act on.** "Day +56 was the upload-and-sign step in Ivan's trajectory" is useful. Restating the whole timeline is not.
+4. **Use attribution every time you do cite.** Frame as "in Ivan's trajectory, day +X..." or "on the author's arc, +X was...". Never collapse the pack's content into your own claim.
+
+## Output style — DEFAULT QUIET MODE
+
+The default is normal conversation, not a teleprompter. Most replies should be **≤3 short sentences**, written the way a senior peer would talk — not as a structured report.
+
+**Do not, by default:**
+
+- dump match tables, scoring grids (✓/✗), or "X/4 ознак" breakdowns
+- list every active lead with its match score
+- enumerate options A/B/C/D
+- restate `applies_when` conditions back to the user
+- repeat the terminal grade after the first invocation
+- include eyebrow labels like "1. Pack — підтверджую розуміння" or "2-3. Match table"
+- preface answers with a four-step plan of what you'll output
+
+If the pack does not actually map to the user's question, **say nothing about the pack** — answer as you would without it. Silence is a valid output.
+
+## Verbose mode — only on explicit request
+
+Switch to structured output **only** when the user explicitly asks. Trigger phrases (paraphrase OK):
+
+- "show me the trajectory" / "що каже pack" / "цитуй step"
+- "match my pipeline" / "score my leads" / "переклади на дні твого кейсу"
+- "what step / what day are we on?"
+- "give me the full breakdown"
+
+In verbose mode you may produce: pipeline match tables, day-by-day step quotes, structured "options" lists. After answering — collapse back to quiet mode for the next reply.
 
 ## What NOT to do
 

@@ -86,8 +86,13 @@ Either way, the user's Claude reads `SKILL.md` first to understand:
 - when to invoke (constraints in "When to invoke")
 - how to use the pack (where each file fits)
 - what not to do (attribution, no fabrication, no de-anonymization)
+- **how to reply** (default quiet mode vs verbose on explicit ask)
 
 The pack content is then context for the user's session, not the user's Claude's own analysis.
+
+### SKILL.md template
+
+A canonical `SKILL.md` for a new pack lives at [`templates/SKILL.template.md`](../templates/SKILL.template.md). Copy it, fill the placeholders, ship. The template carries the **default quiet output mode** — without it the user's Claude tends to dump the entire trajectory back into chat on every reply, which destroys the conversational register. Keep the "Output style" and "Verbose mode" sections verbatim unless you have a specific reason to override them.
 
 ## Authorship and attribution
 
