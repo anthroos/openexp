@@ -2,6 +2,41 @@
 
 All notable changes to OpenExp.
 
+## 2026-04-27 — Pack format v3 (raw publication)
+
+**Drop publisher-side interpretation. Ship raw, derive on read.**
+
+Schema v2 shipped each pack as five files including `experience.yaml` — a wrapper artifact carrying `applies_when`, `searchable_summary`, and `grade_reason`. Those fields baked one Claude's read of the timeline into the artifact at publish time. Different readers with different contexts inherit the publisher's bias.
+
+Schema v3 inverts that:
+
+- **`experience.yaml` removed.** No `applies_when`, no `searchable_summary`, no `grade_reason`.
+- **`meta.yaml` added.** Facts only: pack id, author handle, license, outcome label (`closed_won` / etc.), `closed_at` day, `duration_days`, `step_count`, `category_tokens` list. Nothing the publisher *interpreted*.
+- **`trajectory.anonymized.yaml` is the canonical artifact.** It already carries the timeline; v3 makes it the only source of truth on what happened.
+- **The reader's Claude derives match on the fly.** Reads `meta.yaml` for filtering, reads `trajectory.anonymized.yaml` for step content, decides whether the trajectory's shape applies to the user's actual situation. The pack does not pre-declare when it applies.
+
+Files changed in this release:
+
+- `experiences/d49e0997/experience.yaml` — **deleted**.
+- `experiences/d49e0997/meta.yaml` — **new**, schema v3.
+- `experiences/d49e0997/trajectory.anonymized.yaml` — top-level `experience_type` / `domain` / `duration_days` / `notes` block removed; only `trajectory.steps` remains. The narrative `notes` was author interpretation; structural facts moved into `meta.yaml`.
+- `experiences/d49e0997/SKILL.md` — rewritten "How to use" around `meta.yaml` + raw trajectory; explicit "Why raw" section explaining the inversion.
+- `experiences/d49e0997/README.md` — rewritten human face: outcome label as fact, no grade quote.
+- `templates/SKILL.template.md` — pack contents table updated to 4 files (meta + trajectory + README + SKILL); "How the pack informs your replies" now describes derive-on-read.
+- `prompts/extract_experience.md` — repurposed to emit `meta.yaml` only. Refuses to write `applies_when`, `searchable_summary`, `grade`, `grade_reason` even if author tries to supply them.
+- `prompts/anonymize.md` — added "Reverse-identification rule": when an industry/role/geography combination has fewer than ~100 plausible matches in jurisdiction, generalize one level up (e.g. `<regulated_industry>` → `<regulated_industry>`). Strip identifying free-text from `content`, do not just rename tokens.
+- `docs/skill-architecture.md` — pack layout updated; "Why no `experience.yaml`?" section explains v2 → v3 transition.
+
+### Privacy fix bundled in this release
+
+The seed pack's `<regulated_industry>` token plus a free-text phrase ("operating in regulated environments") in step 0 narrowed the discrimination set enough to be reverse-identifiable in a small jurisdiction. Both replaced — token generalized to `<regulated_industry>`, identifying phrase stripped. The new "Reverse-identification rule" in `anonymize.md` is intended to prevent future packs from re-introducing the same class of leak.
+
+### Breaking change
+
+- Existing v2 packs (`experience.yaml` present) still work for read because the SKILL.md tells Claude what files to read; it just gets the four-file v3 layout going forward. New packs published from this commit onward are v3 only.
+
+---
+
 ## 2026-04-27 — Pack-grounded prediction/outcome schema
 
 **`log_prediction` / `log_outcome` MCP tools — new schema with backward compat.**

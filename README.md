@@ -81,60 +81,49 @@ Retrieval ranks via semantic similarity + BM25 + recency. No magic numbers. No Q
 
 When you decide to publish an experience — turn a real, terminal trajectory into a shareable artifact — two prompts do the work:
 
-1. **`prompts/anonymize.md`** — takes raw trajectory data (transcripts, emails, decisions) and produces an anonymized YAML trajectory. PII is replaced by category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<value:10k-100k>`, `<local_currency>`, `day_+5`) while structural features are preserved.
+1. **`prompts/anonymize.md`** — takes raw trajectory data (transcripts, emails, decisions) and produces an anonymized YAML trajectory. PII is replaced by category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<value:10k-100k>`, `<local_currency>`, `day_+5`) while structural features are preserved. The prompt enforces a reverse-identification rule: tokens narrow enough to identify a counterparty in jurisdiction must be generalized one level up before publication.
 
-2. **`prompts/extract_experience.md`** — wraps the anonymized trajectory with the terminal outcome, grade, and grade reason; produces a final `experience.yaml` artifact ready to share.
+2. **`prompts/extract_experience.md`** — reads the anonymized trajectory plus the terminal outcome label and produces a facts-only `meta.yaml` (id, outcome label, duration, step count, category tokens, license). It deliberately refuses to write `applies_when`, `searchable_summary`, or a grade reason — those are interpretations and belong to the reader's Claude at use time, not to the publisher at publish time.
 
 You run both prompts inside your own Claude Code, against your own Qdrant. Nothing is sent to a central server.
 
 ## Publishing an Experience
 
-A published experience is three files in a UUID-named directory:
+A published experience is four files in a UUID-named directory (schema v3, 2026-04-27):
 
 ```
 experiences/<uuid>/
-├── experience.yaml             # wrapper: applies_when, terminal, searchable_summary, metadata
-├── trajectory.anonymized.yaml  # full ordered timeline of N steps
-└── README.md                   # human-readable face for the marketplace
+├── meta.yaml                    # facts only: id, outcome label, duration, category tokens, license
+├── trajectory.anonymized.yaml   # raw ordered timeline of N steps, anonymized
+├── README.md                    # human-readable face for the marketplace
+└── SKILL.md                     # Claude entry point — read first when skill is invoked
 ```
 
-`experience.yaml` shape (abridged from seed `d49e0997`):
+`meta.yaml` shape (abridged from seed `d49e0997`):
 
 ```yaml
-experience:
+pack:
   id: d49e0997-8455-4d3c-90ca-d6cf54d0f662
-  experience_type: acquisition
-  domain: sales
-  duration_days: 57
+  author: ivan-pasichnyk
+  license: MIT
+  schema_version: 3
 
-  applies_when: |
-    A counterparty technical decision-maker books an inbound discovery
-    call and you are running a "free pilot work → commercial contract"
-    acquisition arc, with a counterparty-prepared NDA and a
-    local-jurisdiction e-signing platform.
-
-  terminal:
-    outcome: closed_won
-    grade: 1.0
-    grade_source: manual
-    grade_reason: |
-      "Successful case. Exactly how my business should look — a clean,
-      typical good case."
+  outcome:
+    label: closed_won            # fact, not interpretation
     closed_at: day_+57
 
-  trajectory_ref: trajectory.anonymized.yaml
+  duration_days: 57
+  step_count: 26
 
-  searchable_summary: |
-    An inbound discovery call from a counterparty technical decision-maker
-    led to a counterparty-prepared mutual NDA and a free pilot batch — a
-    sample dataset delivered 24 days after first contact. The counterparty
-    went silent for ~3 weeks after pilot delivery, then re-engaged and
-    introduced a project manager to own day-to-day. ...
-
-  metadata:
-    verified: false
-    license: MIT
+  category_tokens:               # what appears in the trajectory
+    - <counterparty_cto>
+    - <counterparty_pm>
+    - <regulated_industry>
+    - <e_signing_platform_local>
+    # ...
 ```
+
+**No `applies_when`, no `searchable_summary`, no `grade_reason`.** Earlier schemas (v2) baked the publisher's read of the timeline into the artifact — one Claude's interpretation, frozen. Schema v3 inverts that: the pack ships raw, and the reader's Claude derives match on the fly against the reader's actual situation. Different readers, different contexts, different inferences from the same trajectory. See `CHANGELOG.md` for the full v2 → v3 transition rationale.
 
 ### Install as a Claude Code skill
 

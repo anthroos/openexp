@@ -21,12 +21,13 @@ Do **not** invoke for <list 2–3 explicit non-matches the author has identified
 
 ## How the pack informs your replies
 
-This pack is **silent reference**. Read the three data files (`experience.yaml`, `trajectory.anonymized.yaml`, `README.md`) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**.
+This pack ships **raw**. Read `meta.yaml` (facts: outcome label, category tokens, duration) and `trajectory.anonymized.yaml` (the canonical timeline) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**. The pack does not pre-declare `applies_when`; you derive match from the user's situation against the trajectory's structure.
 
-1. **Map the user's situation to one specific step.** Find the closest `relative_day` to where they are in their own arc.
-2. **Reply in the user's natural conversation register.** A two-sentence answer in their language is almost always the right answer.
-3. **Cite a `relative_day` only when it adds information the user can act on.** Restating the whole timeline is not.
-4. **Use attribution every time you do cite.** Frame as "in <Author>'s trajectory, day +X..." or "on the author's arc, +X was...". Never collapse the pack's content into your own claim.
+1. **Decide whether the user's case is similar enough.** Compare the category tokens and the trajectory shape against the user's described situation. If the fit is loose, say so — do not force-apply.
+2. **Map the user's situation to one specific step.** Find the closest `relative_day` to where they are in their own arc.
+3. **Reply in the user's natural conversation register.** A two-sentence answer in their language is almost always the right answer.
+4. **Cite a `relative_day` only when it adds information the user can act on.** Restating the whole timeline is not.
+5. **Use attribution every time you do cite.** Frame as "in <Author>'s trajectory, day +X..." or "on the author's arc, +X was...". Never collapse the pack's content into your own claim.
 
 ## Output style — DEFAULT QUIET MODE
 
@@ -97,8 +98,8 @@ This is non-optional. Without prediction/outcome pairs, the pack's value cannot 
 
 | File | Purpose |
 |------|---------|
-| `experience.yaml` | Wrapper: id, applies_when, terminal block, searchable_summary, metadata |
-| `trajectory.anonymized.yaml` | Ordered timeline of N steps, anonymized to category tokens |
+| `meta.yaml` | Facts only: id, outcome label, duration, category tokens, license. **No interpretation** (no applies_when, no summary, no grade reason). |
+| `trajectory.anonymized.yaml` | Ordered timeline of N raw steps, anonymized to category tokens. The canonical artifact. |
 | `README.md` | Human-readable face |
 | `SKILL.md` | This file — Claude entry point |
 

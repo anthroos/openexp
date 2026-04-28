@@ -1,52 +1,42 @@
 ---
 name: openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
-description: Use Ivan Pasichnyk's published experience pack on a 57-day inbound B2B acquisition that includes a counterparty-prepared NDA, a free pilot batch / sample dataset before contract, and signing via a local-jurisdiction e-signing platform. Invoke when the user is running a similar acquisition motion and wants grounded reference points from a real trajectory that closed at grade 1.0 (author's own assessment).
+description: Use Ivan Pasichnyk's published experience pack — a 57-day inbound B2B acquisition trajectory that closed (outcome label closed_won, day +57). Counterparty redacted to category tokens. Invoke when the user is running a similar acquisition motion (inbound discovery from a counterparty technical decision-maker, free pilot work before contract, local-jurisdiction e-signing) and wants to map their own arc against a real trajectory step by step. The pack publishes raw: no pre-baked applies_when, no summary, no author grade — the reader's Claude derives match from `trajectory.anonymized.yaml` on the fly.
 ---
 
-# OpenExp Experience — Ivan Pasichnyk · Inbound Acquisition with Free Pilot
+# OpenExp Experience — Ivan Pasichnyk · Inbound Acquisition Trajectory
 
-You have access to a published experience pack authored by **Ivan Pasichnyk** (handle: `ivan-pasichnyk`). The pack captures one 57-day inbound acquisition trajectory that closed at grade 1.0. Counterparty identity is anonymized to category tokens; author identity is public.
+You have access to a published experience pack authored by **Ivan Pasichnyk** (handle: `ivan-pasichnyk`). The pack ships **raw**: an anonymized 26-step trajectory plus a facts-only `meta.yaml`. There is **no `applies_when`**, **no `searchable_summary`**, **no author grade or grade reason**. Those are interpretations. They belong to the reader, not the publisher.
 
-## When to invoke
+## Why raw
 
-Use this experience when **all** of the following are true in the user's current situation:
+The publisher's interpretation is one Claude's read of the timeline at the moment of publication, biased by what worked for that one author at that one moment. Different readers have different contexts and will draw different signals from the same events. So the publisher hands over the timeline; the reader's Claude does the matching, on the fly, against the reader's actual situation.
 
-- The lead is **inbound** — counterparty initiated contact, typically via a public scheduling link or referral.
-- The counterparty is **technical** (CTO / lead engineer / similar) and books a discovery call.
-- The motion expected to include a **free pilot batch** or **sample dataset** before the commercial contract is signed.
-- Signing is expected through a **local-jurisdiction e-signing platform** (regional rather than DocuSign / Adobe Sign).
-- The user wants **specific, grounded reference points** from a real trajectory — not generic acquisition advice.
+## How to use this pack
 
-Do **not** invoke for outbound cold outreach, for procurement-driven enterprise deals where the procurement team owns the contract, or for purely services contracts without a pilot phase.
-
-## How the pack informs your replies
-
-This pack is **silent reference**. Read the three data files (`experience.yaml`, `trajectory.anonymized.yaml`, `README.md`) into your working context once at invocation, then let them shape your thinking — but **do not pour them back into the chat**.
-
-1. **Map the user's situation to one specific step.** Find the closest `relative_day` to where they are in their own arc.
-2. **Reply in the user's natural conversation register.** A two-sentence answer in their language is almost always the right answer.
-3. **Cite a `relative_day` only when it adds information the user can act on.** "Day +56 was the upload-and-sign step in Ivan's trajectory" is useful. Restating the whole timeline is not.
-4. **Use attribution every time you do cite.** Frame as "in Ivan's trajectory, day +X..." or "on the author's arc, +X was...". Never collapse the pack's content into your own claim.
+1. **Read `meta.yaml` first.** Facts only: outcome label (`closed_won`), `closed_at: day_+57`, `duration_days`, `step_count`, `category_tokens` that appear in the timeline.
+2. **Read `trajectory.anonymized.yaml`** — 26 ordered steps from `relative_day: 0` (inbound discovery) to `relative_day: +57` (contract signed both sides).
+3. **Derive match on the user's actual situation.** Look at the category tokens in `meta.yaml` and the structure of the trajectory. Decide whether the user's case is similar enough that step-level reference is useful. **You do the matching here — the pack does not pre-declare when it applies.**
+4. **Map the user's situation to one specific `relative_day`.** Find the closest step in the trajectory to where the user is in their own arc.
+5. **Cite by day with attribution.** Frame as "in Ivan's trajectory, day +X was…", never "the rule is…".
 
 ## Output style — DEFAULT QUIET MODE
 
-The default is normal conversation, not a teleprompter. Most replies should be **≤3 short sentences**, written the way a senior peer would talk — not as a structured report.
+Default reply mode is normal conversation, not a teleprompter. Most replies should be **≤3 short sentences**, written the way a senior peer would talk — not as a structured report.
 
 **Do not, by default:**
 
 - dump match tables, scoring grids (✓/✗), or "X/4 ознак" breakdowns
 - list every active lead with its match score
 - enumerate options A/B/C/D
-- restate `applies_when` conditions back to the user
-- repeat the terminal grade after the first invocation
-- include eyebrow labels like "1. Pack — підтверджую розуміння" or "2-3. Match table"
+- repeat the outcome label after the first invocation
+- include eyebrow labels like "1. Pack — підтверджую розуміння"
 - preface answers with a four-step plan of what you'll output
 
-If the pack does not actually map to the user's question, **say nothing about the pack** — answer as you would without it. Silence is a valid output.
+If the trajectory does not actually map to the user's question, **say nothing about the pack** — answer as you would without it. Silence is a valid output.
 
 ## Verbose mode — only on explicit request
 
-Switch to structured output **only** when the user explicitly asks. Trigger phrases (paraphrase OK):
+Switch to structured output **only** when the user asks. Trigger phrases (paraphrase OK):
 
 - "show me the trajectory" / "що каже pack" / "цитуй step"
 - "match my pipeline" / "score my leads" / "переклади на дні твого кейсу"
@@ -77,30 +67,30 @@ When the window passes, **call `log_outcome`** with observed facts only:
 
 **Do not** interpret outcomes. Do not assign `reward`. Do not add `confidence`. Aggregate analysis happens later, off-call, with population baselines.
 
-This is non-optional. Without prediction/outcome pairs, the pack's value cannot be measured, and any future improvement (new packs, voting, retrieval upgrade) is unfalsifiable.
+This is non-optional. Without prediction/outcome pairs, the pack's value cannot be measured, and any future improvement is unfalsifiable.
 
 **Trigger criterion:** logging fires only when you cite `relative_day` as the reason for an action recommendation. If you don't cite a day, you don't log. If you only describe the situation without recommending, you don't log.
 
 ## What NOT to do
 
-- **Do not claim the author's experience as your own analysis.** Always frame as "Ivan's trajectory shows..." or "On day +X of the author's pack...". Attribution is non-negotiable.
-- **Do not invent steps that are not in `trajectory.anonymized.yaml`.** If the user asks about something not in the pack, say so explicitly.
+- **Do not claim the author's experience as your own analysis.** Always frame as "Ivan's trajectory shows…" or "On day +X of the author's pack…". Attribution is non-negotiable.
+- **Do not invent steps not in `trajectory.anonymized.yaml`.** If the user asks about something not in the pack, say so explicitly.
 - **Do not collapse step-level observations into general rules.** This pack is one trajectory, not a methodology. "On one trajectory, X happened" is the right frame; "the rule is X" is wrong.
 - **Do not surface PII or attempt to de-anonymize the counterparty.** The pack is published anonymized; that contract holds in your responses too.
-- **Do not extend the grade.** Author graded 1.0 for this trajectory; do not claim future or related arcs are also high-grade because this one was.
+- **Do not assign or extend a grade.** The pack ships outcome (`closed_won`) — a fact. It deliberately ships no `grade_reason` quote because that would be the author's interpretation; you do not get to invent one either.
 
 ## Author profile
 
-**Ivan Pasichnyk** — founder, welabeldata.com (data labeling, San Francisco). Domain expertise: B2B acquisition arcs in services and data-labeling verticals, including dual-use hardware adjacencies. Contact: ivan@welabeldata.com.
+**Ivan Pasichnyk** — founder, welabeldata.com (data labeling, San Francisco). Contact: ivan@welabeldata.com.
 
 ## Pack contents
 
 | File | Purpose |
 |------|---------|
-| `experience.yaml` | Wrapper: id, applies_when, terminal block, searchable_summary, metadata |
-| `trajectory.anonymized.yaml` | Ordered timeline of 26 steps, anonymized to category tokens |
-| `README.md` | Human-readable face |
-| `SKILL.md` | This file — Claude entry point |
+| `meta.yaml` | Facts only: id, outcome label, duration, category tokens, license. No interpretation. |
+| `trajectory.anonymized.yaml` | Ordered timeline of 26 raw steps, anonymized to category tokens. The canonical artifact. |
+| `README.md` | Human-readable face. |
+| `SKILL.md` | This file — Claude entry point. |
 
 ## License
 

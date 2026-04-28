@@ -79,6 +79,24 @@ These are essential signal — keep them as-is or as close as possible:
 - If you cannot determine `experience_type` confidently, use `unclassified` and note your uncertainty in a top-level `notes:` field.
 - If a step contains content so specific it cannot be safely anonymized (e.g. a unique IP, a one-of-a-kind project description), redact the entire content with `<redacted: reason>` rather than leak it.
 
+## Reverse-identification rule (mandatory)
+
+A category token is **only safe** when the discrimination set it points to is large enough that no third party can reverse-identify the counterparty. If the literal industry/role/geography combination has fewer than ~100 plausible matches in the trajectory's jurisdiction, **generalize one level up**.
+
+Examples:
+
+| Specific (leaky) | Generalize to |
+|------------------|---------------|
+| `<defense>`, `<regulated_industry>`, `<aerospace>` in a small jurisdiction | `<regulated_industry>` |
+| `<crypto_exchange>` in a single-country regulator regime | `<regulated_fintech>` |
+| `<pharma_oncology>` in a small clinical-trial market | `<regulated_healthcare>` |
+| `<single_named_industry_with_<100_companies_locally>` | `<regulated_industry>` or `<industry_redacted>` |
+| Job titles unique to one company (`<head_of_special_program_X>`) | role family: `<exec>`, `<technical_lead>`, `<program_owner>` |
+
+Same rule for free-text inside `content`. Phrases like "operating in regulated environments", "providing services to <government_branch>", "platform certified by <single_certifier>" — those identify even when the explicit token is generic. Strip them, do not just rename them.
+
+When in doubt, generalize. The reader's Claude can still match on `<regulated_industry>` against the user's situation; it cannot un-leak a fingerprint.
+
 ## Output Format
 
 Return ONLY the YAML. No commentary, no preamble, no closing notes.

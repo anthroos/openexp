@@ -25,7 +25,7 @@ openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
 ### Two layers of identity
 
 - **Author identity is public.** It signs the experience pack, like authorship on a research paper. Picking a public handle is part of publishing.
-- **Counterparty identity is anonymized.** Trajectory content uses category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<value:10k-100k>`, `day_+5`). The skill name reveals **who created the pack**, never **who they were dealing with**.
+- **Counterparty identity is anonymized.** Trajectory content uses category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<value:10k-100k>`, `day_+5`). The skill name reveals **who created the pack**, never **who they were dealing with**. See `prompts/anonymize.md` for the reverse-identification rule that keeps tokens broad enough to be safe.
 
 ## Filesystem layout
 
@@ -34,10 +34,12 @@ A published experience pack ships as a directory containing four files:
 ```
 openexp:<author>:<slug>/
 ├── SKILL.md                       # Claude entry point — read first when skill is invoked
-├── experience.yaml                 # wrapper: applies_when, terminal, searchable_summary
-├── trajectory.anonymized.yaml      # ordered timeline of N steps, anonymized
+├── meta.yaml                       # facts only: id, outcome label, duration, category tokens, license
+├── trajectory.anonymized.yaml      # ordered timeline of N raw steps, anonymized
 └── README.md                       # human-readable face
 ```
+
+**Why no `experience.yaml`?** Earlier schemas (v2) shipped a wrapper artifact with `applies_when`, `searchable_summary`, and `grade_reason`. Those fields baked the publisher's read of the timeline into the pack — one Claude's interpretation, frozen at publish time. Schema v3 (2026-04-27) drops that wrapper and ships **raw**: `meta.yaml` carries facts only (outcome label, category tokens, structural counts), and the reader's Claude derives `applies_when` on the fly against the reader's actual situation. Different readers, different contexts, different inferences from the same trajectory.
 
 Inside the canonical OpenExp repo, packs live at `experiences/<uuid>/`. The UUID-only directory is the **storage** form. The skill-namespaced directory is the **install** form.
 

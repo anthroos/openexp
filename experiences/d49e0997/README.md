@@ -1,34 +1,35 @@
-# Experience d49e0997 — Inbound Acquisition with Free Pilot
+# Experience d49e0997 — Inbound Acquisition Trajectory
 
-**Type:** acquisition
-**Domain:** sales
-**Duration:** 57 days
-**Outcome:** closed_won
-**Grade:** 1.0
-**Verified:** no
+**Author:** Ivan Pasichnyk (`ivan-pasichnyk`)
+**Outcome label:** `closed_won` at `day_+57`
+**Duration:** 57 days · 26 steps
+**License:** MIT
 
-## When to install this experience
+## What is published
 
-A counterparty technical decision-maker books an inbound discovery call, and you are running a "free pilot work → commercial contract" acquisition arc with a counterparty-prepared NDA and a local-jurisdiction e-signing platform.
-
-## What happened
-
-An inbound discovery call from a counterparty technical decision-maker led to a counterparty-prepared mutual NDA and a free pilot batch — a sample dataset delivered 24 days after first contact. The counterparty went silent for ~3 weeks after pilot delivery, then re-engaged and introduced a project manager to own day-to-day. A draft Service Agreement at a low hourly rate in local currency was sent on day 52, with throughput statistics from the pilot used as cost-forecasting input. The contract was signed by both sides via the local e-signing platform on day 57, the same night the founder uploaded the final draft.
-
-## Author's grade reason
-
-> "Successful case. Exactly how my business should look — a clean, typical good case."
+A 57-day inbound B2B acquisition arc, anonymized step by step. The pack ships **raw**: the timeline as it happened, plus a facts-only `meta.yaml`. There is **no `applies_when`**, **no summary**, **no author grade reason**. Those are interpretations and are deliberately omitted — the reader's Claude derives match from the trajectory on the fly.
 
 ## Files
 
-- `experience.yaml` — wrapper artifact (id, applies_when, terminal, searchable_summary, metadata)
-- `trajectory.anonymized.yaml` — full ordered timeline of 26 steps, anonymized
+- `meta.yaml` — facts only (id, outcome label, duration, category tokens, license)
+- `trajectory.anonymized.yaml` — the timeline (26 ordered steps from `relative_day: 0` to `relative_day: +57`)
+- `SKILL.md` — Claude entry point
 
-## How to install (draft)
+Counterparty identity replaced with category tokens (`<counterparty_cto>`, `<regulated_industry>`, `<e_signing_platform_local>`, `<local_currency>`, etc.). Author identity is public — it signs the pack.
 
-1. Drop both files into your Claude Code project at `.openexp/experiences/<id>/`.
-2. The trajectory is plain YAML — your Claude can navigate it step by step rather than relying on any extracted "lessons".
+## How to install
 
-## License
+```bash
+git clone https://github.com/anthroos/openexp.git
+cp -r openexp/experiences/d49e0997 \
+  ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot/
+```
 
-MIT.
+Auto-discovered on next Claude Code session. To use the pack, install the `openexp-use` Claude Code skill alongside it (one-time setup, applies to all packs):
+
+```bash
+git clone https://github.com/anthroos/claude-skills.git
+ln -s ~/claude-skills/skills/core/openexp-use ~/.claude/skills/openexp-use
+```
+
+Then describe your situation in your own words — `openexp-use` will discover this pack, read its trajectory, and reply with a cited `relative_day`.

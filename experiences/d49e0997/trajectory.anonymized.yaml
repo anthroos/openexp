@@ -4,14 +4,6 @@
 # Author redacted; counterparty redacted to category tokens.
 
 trajectory:
-  experience_type: acquisition
-  domain: sales
-  duration_days: 57
-  notes: |
-    Inbound discovery → free pilot batch → ~3 weeks silence on counterparty side
-    → re-engagement → PM introduced → contract signed via local e-signing platform.
-    Vertical: <regulated_industry>. Geography: <local_jurisdiction>.
-
   steps:
     - relative_day: 0
       kind: observation
@@ -22,8 +14,7 @@ trajectory:
       content: |
         Counterparty CTO (<regulated_industry> startup, seed-stage funding range)
         booked a 30-min discovery call via the founder's public scheduling link.
-        Inbound, no prior thread. Counterparty company profile:
-        specialized hardware platform operating in regulated environments.
+        Inbound, no prior thread.
 
     - relative_day: 3
       kind: meeting
