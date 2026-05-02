@@ -25,11 +25,38 @@
 
 ---
 
+## Quick Start
+
+```bash
+git clone https://github.com/anthroos/openexp.git
+cd openexp
+./setup.sh
+```
+
+That installs the four hooks into Claude Code, brings up Qdrant in Docker, and registers the MCP server.
+
+**Prerequisites:** Python 3.11+, Docker, jq.
+
+No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
+
+To install the seed pack (a real 57-day B2B sales arc, anonymized) and try retrieval against a worked example, see [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — install instructions in its README.
+
+---
+
 ## The Question
 
 When you close a deal, ship a feature, or lose a client — *how did it happen*? Which decisions, in what order, against which context, on which hypotheses? Today's AI agents can't answer that. They follow skills and instructions perfectly, but they don't accumulate grounded knowledge about how outcomes actually arrived.
 
 OpenExp captures every human-AI decision as a step in a trajectory, links those steps into coherent journeys, and grades each journey retroactively when reality returns its verdict — a deal closes, a sprint ships, a payment lands. The result is a continuously growing labeled dataset of decisions tied to outcomes, ready to train domain-specific intuition.
+
+## Glossary
+
+A few terms repeat throughout. Settling them up front:
+
+- **Trajectory** — an ordered timeline of decisions a human and AI made together over the life of one closed arc (a deal, a feature, an incident). The unit of data.
+- **Pack** — a published, anonymized trajectory plus its `meta.yaml`. The unit of distribution. Lives in its own GitHub repo.
+- **Skill** — how Claude Code installs and invokes a pack. Naming convention: `openexp:<author>:<slug>`.
+- **`openexp-use`** — the universal applier skill that, given an installed pack, reads its trajectory and answers your situation with a cited day.
 
 ## What It Is Not
 
@@ -49,20 +76,6 @@ Only terminal outcomes get labels:
 Steps are stored raw. Authors annotate their own intent, hypotheses, and decisions ("I believed X at this point", "I chose Y because Z"). They do not label the *signal quality* of individual events — that's what the eventual model learns.
 
 Casual analogy: kids in school don't get annotations on every homework problem. They turn in work, get a grade at the end of the term, and develop intuition over hundreds of grades.
-
-## Quick Start
-
-```bash
-git clone https://github.com/anthroos/openexp.git
-cd openexp
-./setup.sh
-```
-
-That installs the four hooks into Claude Code, brings up Qdrant in Docker, and registers the MCP server.
-
-**Prerequisites:** Python 3.11+, Docker, jq.
-
-No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
 
 ## How It Works
 
