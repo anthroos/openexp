@@ -89,17 +89,19 @@ You run both prompts inside your own Claude Code, against your own Qdrant. Nothi
 
 ## Publishing an Experience
 
-A published experience is four files in a UUID-named directory (schema v3, 2026-04-27):
+A published experience is its **own GitHub repo** (one repo per pack), containing four files:
 
 ```
-experiences/<uuid>/
+exp-<slug>/
 ├── meta.yaml                    # facts only: id, outcome label, duration, category tokens, license
 ├── trajectory.anonymized.yaml   # raw ordered timeline of N steps, anonymized
-├── README.md                    # human-readable face for the marketplace
+├── README.md                    # human-readable face for the catalog
 └── SKILL.md                     # Claude entry point — read first when skill is invoked
 ```
 
-`meta.yaml` shape (abridged from seed `d49e0997`):
+Each pack has its own repo so authors own their content (issues, license, versioning), and the engine repo stays focused on the runtime. See [`docs/publishing-a-pack.md`](docs/publishing-a-pack.md) for the author guide.
+
+`meta.yaml` shape (abridged from the seed pack [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot)):
 
 ```yaml
 pack:
@@ -137,7 +139,8 @@ Drop the pack into `~/.claude/skills/openexp:<author>:<slug>/` (rename the direc
 
 ```bash
 # Install the seed pack as a skill
-cp -r ~/openexp/experiences/d49e0997 \
+git clone https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot.git
+ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
   ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
 ```
 
@@ -149,7 +152,7 @@ Two layers of identity:
 
 See `docs/skill-architecture.md` for the full naming convention, install flow, and design rationale.
 
-The `experiences/` directory in this repo is the seed of an eventual marketplace. The publication format works; seeds will accumulate. A directory of installable experiences is the eventual surface, not a built product today.
+This engine repo is the runtime — it does not bundle packs. Each published pack lives in its own repo (see the [seed pack](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) as the reference shape). A web catalog at `openexp.ai` aggregates published packs; an automated registry index is on the roadmap. A directory of installable experiences is the eventual surface, not a built product today.
 
 ## MCP Tools
 
@@ -221,7 +224,7 @@ Environment variables (`.env`):
 
 ## Status
 
-**Pilot. Architecture freeze landed 2026-04-26.** First experience seed published: `experiences/d49e0997/` — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
+**Pilot. Architecture freeze landed 2026-04-26.** First experience seed published as a standalone repo: [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
 
 Honest about what isn't done:
 - The marketplace UI is just a directory in this repo. No web surface yet.

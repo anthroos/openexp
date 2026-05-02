@@ -49,9 +49,10 @@ Legend:
 
 | Capability | Status | Today |
 |---|---|---|
-| Public catalog | 🟡 | The catalog **is** the GitHub repo (`anthroos/openexp/experiences/`). Site `openexp.ai/use` lists currently published packs |
-| Browsable filter UI ("show me sales packs that closed in <30 days") | ❌ | Today: read the file list, open `meta.yaml` to inspect tokens |
-| Install one pack | ✅ | `cp -r openexp/experiences/<uuid> ~/.claude/skills/openexp:<author>:<slug>/` — auto-discovered by Claude Code |
+| Public catalog | 🟡 | Each pack is its own GitHub repo named `exp-<slug>`. Site `openexp.ai/use` lists currently published packs. Reference seed: [`anthroos/exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) |
+| Browsable filter UI ("show me sales packs that closed in <30 days") | ❌ | Today: read the catalog list, open each pack's `meta.yaml` to inspect tokens |
+| Automated catalog index (registry of all `exp-*` repos with `meta.yaml` summaries) | ❌ | Today: catalog is a hand-maintained list on `openexp.ai`. Future: a YAML index that `openexp-use` can read |
+| Install one pack | ✅ | `git clone <pack-repo> && ln -s "$PWD/<pack-repo>" ~/.claude/skills/openexp:<author>:<slug>` — auto-discovered by Claude Code |
 | Install the `openexp-use` skill that knows how to apply any pack | ✅ | `git clone anthroos/claude-skills` + symlink. One-time, applies to all packs |
 | Search "is there a pack relevant to my situation?" | 🟡 | The `openexp-use` skill does this — discovers all installed packs and matches against the user's situation. Across-machines / public-marketplace search = ❌ |
 
@@ -128,11 +129,14 @@ If you want to see the project work right now, this is the path:
 
 1. **Install:**
    ```
+   # One-time: the universal applier
    git clone https://github.com/anthroos/claude-skills.git
    ln -s ~/claude-skills/skills/core/openexp-use ~/.claude/skills/openexp-use
-   git clone https://github.com/anthroos/openexp.git
-   cp -r openexp/experiences/d49e0997 \
-     ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot/
+
+   # Per pack: the pack itself
+   git clone https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot.git
+   ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
+     ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
    ```
 2. **Restart Claude Code** — both the pack and the `openexp-use` skill auto-discover.
 3. **Describe a situation** in your own words. The `openexp-use` skill discovers installed packs, reads each `meta.yaml` + `trajectory.anonymized.yaml`, judges fit, and replies with a cited `relative_day` from the matching trajectory.

@@ -41,37 +41,35 @@ openexp:<author>:<slug>/
 
 **Why no `experience.yaml`?** Earlier schemas (v2) shipped a wrapper artifact with `applies_when`, `searchable_summary`, and `grade_reason`. Those fields baked the publisher's read of the timeline into the pack — one Claude's interpretation, frozen at publish time. Schema v3 (2026-04-27) drops that wrapper and ships **raw**: `meta.yaml` carries facts only (outcome label, category tokens, structural counts), and the reader's Claude derives `applies_when` on the fly against the reader's actual situation. Different readers, different contexts, different inferences from the same trajectory.
 
-Inside the canonical OpenExp repo, packs live at `experiences/<uuid>/`. The UUID-only directory is the **storage** form. The skill-namespaced directory is the **install** form.
+Each published pack is its own GitHub repo named `exp-<slug>` (e.g. [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot)). The repo is the **storage** form. The `~/.claude/skills/openexp:<author>:<slug>/` directory on the user's machine is the **install** form.
 
 ### Storage vs install
 
 | Layer | Path | Purpose |
 |-------|------|---------|
-| **Storage** | `experiences/<uuid>/` (UUID-only, in repo) | Canonical artifact, version-controlled, anonymized |
-| **Install** | `~/.claude/skills/openexp:<author>:<slug>/` | What a user copies into their Claude Code installation |
+| **Storage** | `github.com/<owner>/exp-<slug>` (one repo per pack) | Canonical artifact, version-controlled, anonymized; carries its own `meta.yaml` UUID |
+| **Install** | `~/.claude/skills/openexp:<author>:<slug>/` | What a user symlinks into their Claude Code installation |
 
 Reasons for the split:
-- UUID is stable and collision-free; it's the canonical ID across all systems.
+- Each author owns their pack's lifecycle — issues, license, versioning — without coordinating with the engine repo.
+- UUID inside `meta.yaml` is stable and collision-free; it's the canonical ID across all systems even if the slug changes.
 - Skill-namespaced name is presentation — what users see in their skill list.
-- Renaming the slug never breaks the canonical reference.
+- The engine repo (`anthroos/openexp`) stays focused on the runtime and ships zero packs.
 
 ## Install flow
 
-A user installs a published experience pack by copying the directory into their Claude Code skill directory under the skill-namespaced name:
+A user installs a published experience pack by cloning its repo and symlinking it into their Claude Code skill directory under the skill-namespaced name:
 
 ```bash
-# Example: Ivan publishes to a public mirror, user installs.
-cd ~/.claude/skills/
-git clone https://github.com/anthroos/openexp-experience-ivan-acquisition \
-  openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
-```
+# Clone the pack repo
+git clone https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot.git
 
-Or, if the canonical pack lives in this repo and the user wants the seed:
-
-```bash
-cp -r ~/openexp/experiences/d49e0997 \
+# Symlink under the skill-namespaced name
+ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
   ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
 ```
+
+(`cp -r` works too if the user wants a copy detached from upstream updates.)
 
 Claude Code auto-discovers the skill on next session start. No registration step.
 
