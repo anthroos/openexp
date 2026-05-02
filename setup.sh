@@ -12,6 +12,41 @@
 # 7. Verifies everything works
 set -euo pipefail
 
+usage() {
+  cat <<EOF
+Usage: ./setup.sh [OPTIONS]
+
+Set up OpenExp — Q-learning memory for Claude Code.
+
+Steps performed:
+  1. Check prerequisites (Python 3.11+, Docker, jq, Claude Code CLI)
+  2. Create Python venv and install dependencies
+  3. Start Qdrant vector database (Docker)
+  4. Create Qdrant collection
+  5. Copy .env.example → .env
+  6. Register MCP server + hooks in Claude Code settings
+  7. Verify installation
+
+Options:
+  -h, --help    Show this help message and exit
+
+Environment variables:
+  QDRANT_API_KEY    Optional. Passed to Qdrant container for auth.
+
+After setup:
+  claude                                         Start Claude Code (hooks activate automatically)
+  .venv/bin/python3 -m openexp.cli ingest        Ingest observations into Qdrant
+  .venv/bin/python3 -m openexp.cli search -q ''  Search memories
+  .venv/bin/python3 -m openexp.cli stats         Show memory stats
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) usage; exit 0 ;;
+  esac
+done
+
 OPENEXP_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_SETTINGS="$HOME/.claude/settings.local.json"
 COLLECTION="openexp_memories"
