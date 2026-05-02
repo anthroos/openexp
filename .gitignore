@@ -39,3 +39,6 @@ qdrant_storage/
 # Generated HTML
 *.html
 !openexp/static/*.html
+
+# Benchmark datasets (download separately — see benchmarks/README.md)
+benchmarks/data/
