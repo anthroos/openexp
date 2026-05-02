@@ -22,6 +22,41 @@ case "$TOOL_NAME" in
   *) exit 0 ;;
 esac
 
+# redact_secrets: read text on stdin, write redacted text to stdout.
+# Uses Python for portable, correct regex (sed character classes diverge
+# between BSD and GNU and were broken in earlier versions of this hook).
+redact_secrets() {
+  python3 -c '
+import re, sys
+s = sys.stdin.read()
+
+# 1. Inline env-var assignments where the variable name implies a secret.
+#    Catches: ANTHROPIC_API_KEY=sk-ant-..., MY_TOKEN=abc, GH_PASSWORD=...
+s = re.sub(
+    r"(^|\s)([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|API|PASS|PWD|AUTH)[A-Z0-9_]*)\s*=\s*\S+",
+    r"\1\2=[REDACTED]",
+    s,
+)
+
+# 2. keyword=value or keyword: value or keyword="value" forms in prose.
+#    Case-insensitive so "API_KEY", "api_key", "Api-Key" all match.
+s = re.sub(
+    r"(token|password|api[_-]?key|secret|credential|auth)\s*[:=]\s*[\"\x27]?[^\s\"\x27]{4,}[\"\x27]?",
+    lambda m: m.group(1) + "=[REDACTED]",
+    s,
+    flags=re.IGNORECASE,
+)
+
+# 3. Bearer / token-prefixed values (sk-ant-..., sk-..., ghp_..., AKIA...).
+s = re.sub(r"Bearer\s+[A-Za-z0-9._/+=\-]+", "Bearer [REDACTED]", s)
+s = re.sub(r"\bsk-[A-Za-z0-9_\-]{16,}", "[REDACTED]", s)
+s = re.sub(r"\bghp_[A-Za-z0-9]{20,}", "[REDACTED]", s)
+s = re.sub(r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]", s)
+
+sys.stdout.write(s)
+'
+}
+
 FILE_PATH=""
 COMMAND=""
 SUMMARY=""
@@ -47,23 +82,21 @@ case "$TOOL_NAME" in
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
     [ -z "$COMMAND" ] && exit 0
     BASE_CMD=$(echo "$COMMAND" | sed 's|^/[^ ]*/||')
+    # Skip read-only commands. Patterns require either end-of-string or a
+    # space after the command name to avoid matching lsof/lsblk/catfish/etc.
     case "$BASE_CMD" in
-      ls*|cat\ *|pwd*|echo\ *|head\ *|tail\ *|wc\ *|which\ *|type\ *|cd\ *|test\ *|\[\ *|find\ *) exit 0 ;;
+      ls|ls\ *|cat\ *|pwd|pwd\ *|echo\ *|head\ *|tail\ *|wc\ *|which\ *|type\ *|cd\ *|test\ *|\[\ *|find\ *|grep\ *|rg\ *) exit 0 ;;
     esac
-    if echo "$COMMAND" | grep -qiE '(export.*TOKEN|export.*SECRET|export.*KEY|export.*PASSWORD)'; then
-      SUMMARY="Ran: [env variable setup - REDACTED]"
-      COMMAND=""
-    else
-      SUMMARY="Ran: ${COMMAND:0:300}"
-    fi
+    # Redact the command BEFORE deriving SUMMARY or CONTEXT — both end up on disk.
+    COMMAND=$(printf '%s' "$COMMAND" | redact_secrets)
+    SUMMARY="Ran: ${COMMAND:0:300}"
     ;;
 esac
 
 [ -z "$SUMMARY" ] && exit 0
 
-# Redact tokens/passwords from summary
-SUMMARY=$(echo "$SUMMARY" | sed -E 's/(token|password|api_key|secret|credential)["\047 :=]+[^ "\047]{8,}/\1=[REDACTED]/gi')
-SUMMARY=$(echo "$SUMMARY" | sed -E 's/Bearer [A-Za-z0-9_\.\-\/+=]+/Bearer [REDACTED]/g')
+# Redact summary (covers Wrote/Edited cases plus a defence-in-depth pass on Bash).
+SUMMARY=$(printf '%s' "$SUMMARY" | redact_secrets)
 
 OBS_ID="obs-$(date +%Y%m%d)-$(openssl rand -hex 4)"
 
