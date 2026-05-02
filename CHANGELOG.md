@@ -2,6 +2,37 @@
 
 All notable changes to OpenExp.
 
+## 2026-05-02 — Hook secret-redaction fix (security-relevant)
+
+**If you installed OpenExp before 2026-05-02, please scrub `~/.openexp/observations/`.**
+
+The PostToolUse hook (`openexp/hooks/post-tool-use.sh`) advertised secret redaction for `Bearer …`, `api_key=…`, `password=…`, `token=…` patterns before writing observations to JSONL on disk. A code review found the redaction sed regex was broken in three concrete ways:
+
+- `\047` for `'` inside a POSIX bracket expression doesn't work on either BSD sed (macOS) or GNU sed — `api_key="…"` and `password="…"` patterns silently passed through unchanged.
+- The Bearer character class had stray escapes that consumed only `sk` from real Anthropic keys (`sk-ant-api03-…`) — the rest of the key leaked.
+- Inline-env-var form (`MY_TOKEN=abc curl …`) was never targeted at all; only `export TOKEN=…` was caught.
+
+Plus the `Bash` branch only redacted `summary`, not the full `command` field, so even if the summary regex had worked, the command itself with secrets reached `context.command` in the JSONL.
+
+**Fix (PR #16):** redaction rewritten in Python via `python3 -c`, three rules covering: inline ENV-var assignments to `*TOKEN*` / `*SECRET*` / `*KEY*` / `*PASSWORD*` / `*PASS*` / `*PWD*` / `*AUTH*` / `*API*` names; `keyword=value` / `keyword: value` / `keyword="value"` forms; well-known prefixes (`Bearer X`, `sk-…`, `ghp_…`, `AKIA…`). Both `summary` and `command` redacted. Skip-list tightened: `ls *` instead of `ls*` (prior pattern swallowed `lsof` / `lsblk`). 19-assertion regression test added at `tests/test_post_tool_use_hook.sh` — passes 19/19 against the new hook, would fail 6+ on the prior version.
+
+### Action for existing users
+
+The observations directory is in `$HOME` with default permissions, so it is **not network-exposed**. But any backup, file-sync, or shared-machine setup carries the secrets along.
+
+To scrub:
+
+```bash
+# Inspect what's there first
+grep -hE '(sk-(ant-)?[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|Bearer [A-Za-z0-9._/+=-]{16,}|(token|password|api_key|secret)["=: ][^"]{8,})' \
+  ~/.openexp/observations/observations-*.jsonl
+
+# If you find anything — wipe pre-fix observations
+rm ~/.openexp/observations/observations-*.jsonl
+```
+
+The captured observations are a working dataset, not a permanent record — wiping is safe. New observations from this commit forward will be properly redacted.
+
 ## 2026-04-27 — Pack format v3 (raw publication)
 
 **Drop publisher-side interpretation. Ship raw, derive on read.**
