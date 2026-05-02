@@ -1,6 +1,6 @@
 #!/bin/bash
-# OpenExp Setup — Q-learning memory for Claude Code
-# Usage: ./setup.sh
+# OpenExp Setup — persistent memory layer for Claude Code
+# Usage: ./setup.sh [-h|--help]
 #
 # This script:
 # 1. Creates Python venv + installs deps
@@ -16,7 +16,7 @@ usage() {
   cat <<EOF
 Usage: ./setup.sh [OPTIONS]
 
-Set up OpenExp — Q-learning memory for Claude Code.
+Set up OpenExp — persistent memory layer for Claude Code.
 
 Steps performed:
   1. Check prerequisites (Python 3.11+, Docker, jq, Claude Code CLI)
@@ -31,13 +31,41 @@ Options:
   -h, --help    Show this help message and exit
 
 Environment variables:
-  QDRANT_API_KEY    Optional. Passed to Qdrant container for auth.
+  QDRANT_API_KEY          Optional. Auth key passed to Qdrant container.
+  OPENEXP_DATA_DIR        Override default data directory (~/.openexp/data).
+  OPENEXP_EXPERIENCE      Active experience profile (default: "default").
+  OPENEXP_COLLECTION      Qdrant collection name (default: "openexp_memories").
+
+Hooks registered (auto-activate on every claude session):
+  SessionStart       Inject top-10 relevant memories as context
+  UserPromptSubmit   Recall top-5 memories per message; auto-detect experience
+  PostToolUse        Capture observations from Write/Edit/Bash tool calls
+  SessionEnd         Extract decisions + ingest full transcript (background)
+
+MCP tools available inside Claude Code:
+  search_memory      Hybrid vector+BM25 search with Q-reranking
+  add_memory         Store a memory with embedding
+  log_prediction     Record a prediction grounded to an experience pack step
+  log_outcome        Resolve a prediction with observed facts (active feedback loop)
+  memory_stats       System health: point counts, pending predictions
 
 After setup:
-  claude                                         Start Claude Code (hooks activate automatically)
-  .venv/bin/python3 -m openexp.cli ingest        Ingest observations into Qdrant
-  .venv/bin/python3 -m openexp.cli search -q ''  Search memories
-  .venv/bin/python3 -m openexp.cli stats         Show memory stats
+  claude                                                   Start Claude Code
+  openexp search -q 'your query'                          Search memories
+  openexp ingest                                           Ingest past Claude sessions
+  openexp stats                                            Memory system health
+  openexp experience list                                  List experience profiles
+  openexp experience create                                Interactive experience wizard
+  openexp retrospective daily                              Run daily analysis
+  openexp viz                                              Generate HTML dashboard
+  openexp compact                                          Merge similar memories
+
+Experience profiles (auto-detected from project keywords):
+  default     Software engineering (commits, PRs, deploys)
+  sales       Sales & outreach (leads, proposals, deals)
+  dealflow    Deal pipeline (NDA, invoice, payment)
+
+Per-project experience override: add .openexp.yaml to project root.
 EOF
 }
 
