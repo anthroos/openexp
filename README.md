@@ -27,6 +27,8 @@
 
 ## Quick Start
 
+**Prerequisites:** Python 3.12+, Docker, jq.
+
 ```bash
 git clone https://github.com/anthroos/openexp.git
 cd openexp
@@ -35,17 +37,37 @@ cd openexp
 
 That installs the four hooks into Claude Code, brings up Qdrant in Docker, and registers the MCP server.
 
-**Prerequisites:** Python 3.11+, Docker, jq.
+**Verify it works:**
 
-No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
+```bash
+openexp stats        # should show collection + 0 points
+openexp search -q "test"  # should return empty results without errors
+```
 
-To install the seed pack (a real 57-day B2B sales arc, anonymized) and try retrieval against a worked example, see [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — install instructions in its README.
+**Optional: enable the publish pipeline** (anonymize + extract experience prompts):
+
+```bash
+# edit .env and set your key
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+```
+
+No API key required for core memory functionality. Embeddings run locally via FastEmbed.
+
+**Install the seed pack** (a real 57-day B2B sales arc, anonymized) to try retrieval against a worked example:
+
+```bash
+git clone https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot.git
+ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
+  ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
+```
+
+See the pack's README for usage instructions.
 
 ---
 
 ## The Question
 
-When you close a deal, ship a feature, or lose a client — *how did it happen*? Which decisions, in what order, against which context, on which hypotheses? Today's AI agents can't answer that. They follow skills and instructions perfectly, but they don't accumulate grounded knowledge about how outcomes actually arrived.
+When you close a deal, ship a feature, or lose a client — _how did it happen_? Which decisions, in what order, against which context, on which hypotheses? Today's AI agents can't answer that. They follow skills and instructions perfectly, but they don't accumulate grounded knowledge about how outcomes actually arrived.
 
 OpenExp captures every human-AI decision as a step in a trajectory, links those steps into coherent journeys, and grades each journey retroactively when reality returns its verdict — a deal closes, a sprint ships, a payment lands. The result is a continuously growing labeled dataset of decisions tied to outcomes, ready to train domain-specific intuition.
 
@@ -62,7 +84,7 @@ A few terms repeat throughout. Settling them up front:
 
 - **Not a Q-learning memory system.** We tried Q-values for 8 months. Mean Q-value across 27,000 memories was 0.006; 90% of memories never received any reward signal. Removed on 2026-04-26.
 - **Not Mem0 / Zep / Letta.** Those are storage layers. Storage is the easy part — semantic search alone doesn't tell you which memory actually led to a result.
-- **Not a replacement for skills or CLAUDE.md.** Those say *how* to do something. OpenExp captures *what happened* and *how it ended*.
+- **Not a replacement for skills or CLAUDE.md.** Those say _how_ to do something. OpenExp captures _what happened_ and _how it ended_.
 
 ## The Methodological Core: No Pre-Labeling
 
@@ -73,7 +95,7 @@ Only terminal outcomes get labels:
 - **`outcome`** — `closed_won` / `closed_lost` / `failed` / `abandoned`
 - **`grade`** — `0.0` to `1.0`, school-style
 
-Steps are stored raw. Authors annotate their own intent, hypotheses, and decisions ("I believed X at this point", "I chose Y because Z"). They do not label the *signal quality* of individual events — that's what the eventual model learns.
+Steps are stored raw. Authors annotate their own intent, hypotheses, and decisions ("I believed X at this point", "I chose Y because Z"). They do not label the _signal quality_ of individual events — that's what the eventual model learns.
 
 Casual analogy: kids in school don't get annotations on every homework problem. They turn in work, get a grade at the end of the term, and develop intuition over hundreds of grades.
 
@@ -81,14 +103,28 @@ Casual analogy: kids in school don't get annotations on every homework problem. 
 
 Four hooks run automatically inside Claude Code:
 
-| Hook | When | What |
-|------|------|------|
-| `SessionStart` | Session opens | Searches Qdrant for relevant memories, injects top results as context |
-| `UserPromptSubmit` | Every message | Lightweight per-prompt recall |
-| `PostToolUse` | After Write / Edit / Bash | Captures observations as JSONL |
-| `SessionEnd` | Session closes | Ingests transcript into Qdrant; extracts decisions via Opus 4.x (async) |
+| Hook               | When                      | What                                                                    |
+| ------------------ | ------------------------- | ----------------------------------------------------------------------- |
+| `SessionStart`     | Session opens             | Searches Qdrant for relevant memories, injects top results as context   |
+| `UserPromptSubmit` | Every message             | Lightweight per-prompt recall                                           |
+| `PostToolUse`      | After Write / Edit / Bash | Captures observations as JSONL                                          |
+| `SessionEnd`       | Session closes            | Ingests transcript into Qdrant; extracts decisions via Opus 4.x (async) |
 
 Retrieval ranks via semantic similarity + BM25 + recency. No magic numbers. No Q-value scoring component.
+
+**Normal session flow:**
+
+1. `claude` — open Claude Code in any project
+2. Work normally — hooks capture everything automatically
+3. At session end, transcript ingests into Qdrant in the background
+4. Next session, relevant memories surface automatically as context
+
+Check what's been captured:
+
+```bash
+openexp stats                        # point count, pending predictions
+openexp search -q "your topic"       # verify retrieval works
+```
 
 ## The Pipeline
 
@@ -124,13 +160,13 @@ pack:
   schema_version: 3
 
   outcome:
-    label: closed_won            # fact, not interpretation
+    label: closed_won # fact, not interpretation
     closed_at: day_+57
 
   duration_days: 57
   step_count: 26
 
-  category_tokens:               # what appears in the trajectory
+  category_tokens: # what appears in the trajectory
     - <counterparty_cto>
     - <counterparty_pm>
     - <regulated_industry>
@@ -158,6 +194,7 @@ ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
 ```
 
 Two layers of identity:
+
 - **Author identity is public** — it signs the pack, like authorship on a research paper.
 - **Counterparty identity stays anonymized** — the skill name reveals who created the pack, never who they were dealing with.
 
@@ -171,13 +208,13 @@ This engine repo is the runtime — it does not bundle packs. Each published pac
 
 Five focused tools (hippocampus model — write everything, retrieve selectively):
 
-| Tool | Description |
-|------|-------------|
-| `search_memory` | Hybrid search: semantic similarity + BM25 + recency |
-| `add_memory` | Store a memory. Supports `client_id` for entity tagging |
+| Tool             | Description                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `search_memory`  | Hybrid search: semantic similarity + BM25 + recency                                                                                                   |
+| `add_memory`     | Store a memory. Supports `client_id` for entity tagging                                                                                               |
 | `log_prediction` | Log a pack-grounded prediction. Required when an installed experience pack cites a specific `relative_day` as the basis for an action recommendation. |
-| `log_outcome` | Resolve a prediction with the observed signal — interpretation-free record. |
-| `memory_stats` | Collection stats: point counts by source/type, session count |
+| `log_outcome`    | Resolve a prediction with the observed signal — interpretation-free record.                                                                           |
+| `memory_stats`   | Collection stats: point counts by source/type, session count                                                                                          |
 
 ### Prediction / outcome instrumentation
 
@@ -187,26 +224,26 @@ Pack-grounded predictions are how the system learns whether a published experien
 
 **`log_prediction` (new path, schema_version 2)**
 
-| Field | Required | Purpose |
-|-------|----------|---------|
-| `pack_id` | yes | The pack's slug |
-| `pack_author` | yes | Author handle |
-| `cited_step` | yes | The exact `day +N` cited |
-| `case_id` | yes | External reference (CRM lead_id, ticket ID, deal ID — opaque string) |
-| `applied_action` | yes | What was recommended TO do |
-| `expected_signal` | yes | Observable resolution |
-| `expected_window_days` | yes | Deadline in days for `log_outcome` |
-| `prevented_action` | optional | Negative-space prediction — what was recommended NOT to do (often the higher-value half) |
-| `notes` | optional | Free-text context |
+| Field                  | Required | Purpose                                                                                  |
+| ---------------------- | -------- | ---------------------------------------------------------------------------------------- |
+| `pack_id`              | yes      | The pack's slug                                                                          |
+| `pack_author`          | yes      | Author handle                                                                            |
+| `cited_step`           | yes      | The exact `day +N` cited                                                                 |
+| `case_id`              | yes      | External reference (CRM lead_id, ticket ID, deal ID — opaque string)                     |
+| `applied_action`       | yes      | What was recommended TO do                                                               |
+| `expected_signal`      | yes      | Observable resolution                                                                    |
+| `expected_window_days` | yes      | Deadline in days for `log_outcome`                                                       |
+| `prevented_action`     | optional | Negative-space prediction — what was recommended NOT to do (often the higher-value half) |
+| `notes`                | optional | Free-text context                                                                        |
 
 **`log_outcome` (new path, schema_version 2)**
 
-| Field | Required | Purpose |
-|-------|----------|---------|
-| `prediction_id` | yes | ID returned from `log_prediction` |
-| `actual_signal` | yes | What was observed — raw fact, no interpretation |
-| `days_to_resolve` | yes | How many days from prediction to resolution |
-| `notes` | optional | Free-text, e.g. unexpected events |
+| Field             | Required | Purpose                                         |
+| ----------------- | -------- | ----------------------------------------------- |
+| `prediction_id`   | yes      | ID returned from `log_prediction`               |
+| `actual_signal`   | yes      | What was observed — raw fact, no interpretation |
+| `days_to_resolve` | yes      | How many days from prediction to resolution     |
+| `notes`           | optional | Free-text, e.g. unexpected events               |
 
 **What's deliberately NOT in the schema:** `confidence` (Claude-side confidence is uncalibrated until ≥30 outcome datapoints), `alternative_action_if_no_pack` and `predicted_outcome_alternative` (the same Claude that writes the prediction would invent the counterfactual, biased toward "the pack helped" — real ablation needs a pack-blind run, separate track).
 
@@ -215,37 +252,89 @@ Pack-grounded predictions are how the system learns whether a published experien
 ## CLI
 
 ```bash
+# Memory
 openexp search -q "stalled enterprise procurement" -n 5
-openexp ingest          # ingest pending transcripts into Qdrant
-openexp stats           # Q-cache + collection stats
+openexp ingest                   # ingest pending transcripts into Qdrant
+openexp stats                    # collection stats + pending predictions
+openexp compact                  # merge similar memories to save space
+
+# Experiences
+openexp experience list          # list available experience profiles
+openexp experience show sales    # inspect a profile's config
+openexp experience create        # interactive wizard to build a custom profile
+openexp experience stats         # per-experience memory counts
+
+# Analysis
+openexp retrospective daily      # run daily analysis pass
+openexp retrospective weekly     # run weekly analysis pass
+
+# Visualization
+openexp viz                      # generate HTML dashboard
+openexp viz --replay SESSION_ID  # step-by-step session replay
+openexp viz --demo               # demo dashboard (no data needed)
 ```
 
 ## Configuration
 
 Environment variables (`.env`):
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant server port |
-| `OPENEXP_COLLECTION` | `openexp_memories` | Qdrant collection name |
-| `OPENEXP_DATA_DIR` | `~/.openexp/data` | Predictions, retrieval logs |
-| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Hook output |
-| `OPENEXP_SESSIONS_DIR` | `~/.openexp/sessions` | Session summaries |
-| `OPENEXP_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Embedding model (local, free) |
-| `ANTHROPIC_API_KEY` | *(optional)* | Required only for the publishing pipeline |
+| Variable                   | Default                   | Description                               |
+| -------------------------- | ------------------------- | ----------------------------------------- |
+| `QDRANT_HOST`              | `localhost`               | Qdrant server host                        |
+| `QDRANT_PORT`              | `6333`                    | Qdrant server port                        |
+| `OPENEXP_COLLECTION`       | `openexp_memories`        | Qdrant collection name                    |
+| `OPENEXP_DATA_DIR`         | `~/.openexp/data`         | Predictions, retrieval logs               |
+| `OPENEXP_OBSERVATIONS_DIR` | `~/.openexp/observations` | Hook output                               |
+| `OPENEXP_SESSIONS_DIR`     | `~/.openexp/sessions`     | Session summaries                         |
+| `OPENEXP_EMBEDDING_MODEL`  | `BAAI/bge-small-en-v1.5`  | Embedding model (local, free)             |
+| `ANTHROPIC_API_KEY`        | _(optional)_              | Required only for the publishing pipeline |
 
 ## Status
 
 **Pilot. Architecture freeze landed 2026-04-26.** First experience seed published as a standalone repo: [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
 
 Honest about what isn't done:
+
 - The marketplace UI is just a directory in this repo. No web surface yet.
 - Anonymization is conservative but not bulletproof for readers with deep domain knowledge.
 - Schema may iterate — author-annotation fields (`author_intent`, `author_hypothesis`, `author_decision`) are a likely near-term addition.
 - The eventual ML model trained on this corpus does not exist yet. ≥30 graded trajectories first.
 
 See `docs/redesign-2026-04-26.md` for the full architecture freeze and `docs/claude-design-brief.md` for the v2 product framing.
+
+## Troubleshooting
+
+**Qdrant not starting:**
+
+```bash
+docker logs openexp-qdrant        # check container logs
+docker ps -a                      # confirm container exists
+```
+
+Re-run `./setup.sh` — it will restart an existing stopped container.
+
+**`openexp: command not found`:**
+
+```bash
+source .venv/bin/activate         # activate venv, then retry
+# or use the full path:
+.venv/bin/python3 -m openexp.cli stats
+```
+
+**Hooks not firing (no memories after sessions):**
+
+```bash
+cat ~/.claude/settings.local.json | grep openexp   # confirm hooks registered
+openexp ingest --dry-run                           # check for pending transcripts
+```
+
+**Ingest finds no transcripts:**
+
+Claude Code stores transcripts in `~/.claude/`. If the directory is empty, start a Claude session and close it — `SessionEnd` will write the transcript, then `openexp ingest` will pick it up.
+
+**API key errors during publish pipeline:**
+
+Set `ANTHROPIC_API_KEY` in `.env`. Only needed for `prompts/anonymize.md` and `prompts/extract_experience.md` — core memory works without it.
 
 ## Contributing
 
