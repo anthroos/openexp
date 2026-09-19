@@ -1,15 +1,20 @@
 #!/bin/bash
-# OpenExp PostToolUse hook: capture observations from tool usage.
+# OpenExp PostToolUse hook: capture observations from tool usage
 # Runs after every tool call — must be fast and never block.
-# Captures Write, Edit, Bash; skips read-only commands; redacts secrets.
+# Only captures Write, Edit, Bash (skips reads).
 set -uo pipefail
 
-OBSERVATIONS_DIR="${OPENEXP_OBSERVATIONS_DIR:-$HOME/.openexp/observations}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OPENEXP_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+# Directories
+OBSERVATIONS_DIR="$HOME/.openexp/observations"
 mkdir -p "$OBSERVATIONS_DIR" 2>/dev/null || true
 
 TODAY=$(date +%Y-%m-%d)
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# Read hook input from stdin
 INPUT=$(cat)
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
@@ -17,46 +22,13 @@ SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
 CWD=$(echo "$INPUT" | jq -r '.cwd // "/tmp"')
 PROJECT=$(basename "$CWD")
 
+# Only capture Edit, Write, Bash
 case "$TOOL_NAME" in
   Write|Edit|Bash) ;;
   *) exit 0 ;;
 esac
 
-# redact_secrets: read text on stdin, write redacted text to stdout.
-# Uses Python for portable, correct regex (sed character classes diverge
-# between BSD and GNU and were broken in earlier versions of this hook).
-redact_secrets() {
-  python3 -c '
-import re, sys
-s = sys.stdin.read()
-
-# 1. Inline env-var assignments where the variable name implies a secret.
-#    Catches: ANTHROPIC_API_KEY=sk-ant-..., MY_TOKEN=abc, GH_PASSWORD=...
-s = re.sub(
-    r"(^|\s)([A-Z][A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|API|PASS|PWD|AUTH)[A-Z0-9_]*)\s*=\s*\S+",
-    r"\1\2=[REDACTED]",
-    s,
-)
-
-# 2. keyword=value or keyword: value or keyword="value" forms in prose.
-#    Case-insensitive so "API_KEY", "api_key", "Api-Key" all match.
-s = re.sub(
-    r"(token|password|api[_-]?key|secret|credential|auth)\s*[:=]\s*[\"\x27]?[^\s\"\x27]{4,}[\"\x27]?",
-    lambda m: m.group(1) + "=[REDACTED]",
-    s,
-    flags=re.IGNORECASE,
-)
-
-# 3. Bearer / token-prefixed values (sk-ant-..., sk-..., ghp_..., AKIA...).
-s = re.sub(r"Bearer\s+[A-Za-z0-9._/+=\-]+", "Bearer [REDACTED]", s)
-s = re.sub(r"\bsk-[A-Za-z0-9_\-]{16,}", "[REDACTED]", s)
-s = re.sub(r"\bghp_[A-Za-z0-9]{20,}", "[REDACTED]", s)
-s = re.sub(r"\bAKIA[A-Z0-9]{16}\b", "[REDACTED]", s)
-
-sys.stdout.write(s)
-'
-}
-
+# Extract relevant info based on tool
 FILE_PATH=""
 COMMAND=""
 SUMMARY=""
@@ -65,8 +37,9 @@ case "$TOOL_NAME" in
   Write)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     [ -z "$FILE_PATH" ] && exit 0
+    # Skip sensitive files
     case "$FILE_PATH" in
-      *.env|*.env.*|*credentials.json|*token.json|*secret*|*.pem|*.key|*/.ssh/*) exit 0 ;;
+      *.env|*.env.*|*credentials.json|*token.json|*token_personal.json|*secret*|*.pem|*.key|*/.ssh/*) exit 0 ;;
     esac
     SUMMARY="Wrote $(basename "$FILE_PATH")"
     ;;
@@ -74,32 +47,62 @@ case "$TOOL_NAME" in
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     [ -z "$FILE_PATH" ] && exit 0
     case "$FILE_PATH" in
-      *.env|*.env.*|*credentials.json|*token.json|*secret*|*.pem|*.key|*/.ssh/*) exit 0 ;;
+      *.env|*.env.*|*credentials.json|*token.json|*token_personal.json|*secret*|*.pem|*.key|*/.ssh/*) exit 0 ;;
     esac
     SUMMARY="Edited $(basename "$FILE_PATH")"
     ;;
   Bash)
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
     [ -z "$COMMAND" ] && exit 0
+    # Skip trivial read-only commands
     BASE_CMD=$(echo "$COMMAND" | sed 's|^/[^ ]*/||')
-    # Skip read-only commands. Patterns require either end-of-string or a
-    # space after the command name to avoid matching lsof/lsblk/catfish/etc.
     case "$BASE_CMD" in
-      ls|ls\ *|cat\ *|pwd|pwd\ *|echo\ *|head\ *|tail\ *|wc\ *|which\ *|type\ *|cd\ *|test\ *|\[\ *|find\ *|grep\ *|rg\ *) exit 0 ;;
+      ls*|cat\ *|pwd*|echo\ *|head\ *|tail\ *|wc\ *|which\ *|type\ *|cd\ *|test\ *|\[\ *|find\ *) exit 0 ;;
     esac
-    # Redact the command BEFORE deriving SUMMARY or CONTEXT — both end up on disk.
-    COMMAND=$(printf '%s' "$COMMAND" | redact_secrets)
-    SUMMARY="Ran: ${COMMAND:0:300}"
+    # Redact sensitive commands
+    if echo "$COMMAND" | grep -qiE '(export.*TOKEN|export.*SECRET|export.*KEY|export.*PASSWORD)'; then
+      SUMMARY="Ran: [env variable setup - REDACTED]"
+      COMMAND=""
+    else
+      SUMMARY="Ran: ${COMMAND:0:300}"
+    fi
     ;;
 esac
 
 [ -z "$SUMMARY" ] && exit 0
 
-# Redact summary (covers Wrote/Edited cases plus a defence-in-depth pass on Bash).
-SUMMARY=$(printf '%s' "$SUMMARY" | redact_secrets)
+# Strip tokens/passwords from summary
+SUMMARY=$(echo "$SUMMARY" | sed -E 's/(token|password|api_key|secret|credential)["\047 :=]+[^ "\047]{8,}/\1=[REDACTED]/gi')
+SUMMARY=$(echo "$SUMMARY" | sed -E 's/Bearer [A-Za-z0-9_\.\-\/+=]+/Bearer [REDACTED]/g')
 
+# Classify type
+TYPE="feature"
+if [[ "$FILE_PATH" == *"sales/crm/"* ]]; then TYPE="crm_update"
+elif [[ "$FILE_PATH" == *"projects/pm/"* ]]; then TYPE="change"
+elif [[ "$FILE_PATH" == *"claude-skills/"* ]]; then TYPE="skill_update"
+elif [[ "$FILE_PATH" == *"telegram/"* || "$FILE_PATH" == *"whatsapp/"* ]]; then TYPE="outreach"
+elif [[ "$FILE_PATH" == *"docs/"* && "$FILE_PATH" == *".md" ]]; then TYPE="discovery"
+elif [[ "$COMMAND" == *"git commit"* || "$COMMAND" == *"gh pr"* ]]; then TYPE="change"
+elif [[ "$COMMAND" == *"python"*"send"* || "$COMMAND" == *"node"*"send"* ]]; then TYPE="outreach"
+fi
+
+# Generate tags from file path
+TAGS="[]"
+TAG_LIST=""
+[[ "$FILE_PATH" == *"crm"* ]] && TAG_LIST="${TAG_LIST}\"crm\","
+[[ "$FILE_PATH" == *"tasks"* || "$FILE_PATH" == *"pm_tasks"* ]] && TAG_LIST="${TAG_LIST}\"tasks\","
+[[ "$FILE_PATH" == *"projects"* ]] && TAG_LIST="${TAG_LIST}\"projects\","
+[[ "$FILE_PATH" == *"telegram"* ]] && TAG_LIST="${TAG_LIST}\"telegram\","
+[[ "$FILE_PATH" == *"email"* ]] && TAG_LIST="${TAG_LIST}\"email\","
+[[ "$FILE_PATH" == *"skills"* ]] && TAG_LIST="${TAG_LIST}\"skills\","
+[[ "$FILE_PATH" == *"memory"* ]] && TAG_LIST="${TAG_LIST}\"memory\","
+[[ "$FILE_PATH" == *"research"* ]] && TAG_LIST="${TAG_LIST}\"research\","
+[ -n "$TAG_LIST" ] && TAGS="[${TAG_LIST%,}]"
+
+# Generate observation ID
 OBS_ID="obs-$(date +%Y%m%d)-$(openssl rand -hex 4)"
 
+# Build context
 if [ -n "$FILE_PATH" ]; then
   CONTEXT=$(jq -n --arg fp "$FILE_PATH" '{"file_path": $fp}')
 elif [ -n "$COMMAND" ]; then
@@ -108,15 +111,17 @@ else
   CONTEXT="{}"
 fi
 
+# Build JSONL observation
 OBSERVATION=$(jq -cn \
   --arg id "$OBS_ID" \
   --arg timestamp "$TIMESTAMP" \
   --arg session_id "$SESSION_ID" \
-  --arg type "feature" \
+  --arg type "$TYPE" \
   --arg tool "$TOOL_NAME" \
   --arg summary "$SUMMARY" \
   --argjson context "$CONTEXT" \
   --arg project "$PROJECT" \
+  --argjson tags "$TAGS" \
   '{
     id: $id,
     timestamp: $timestamp,
@@ -126,9 +131,10 @@ OBSERVATION=$(jq -cn \
     summary: $summary,
     context: $context,
     project: $project,
-    tags: []
+    tags: $tags
   }')
 
+# Append to today's JSONL file
 OBS_FILE="$OBSERVATIONS_DIR/observations-$TODAY.jsonl"
 echo "$OBSERVATION" >> "$OBS_FILE"
 

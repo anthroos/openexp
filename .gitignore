@@ -36,9 +36,9 @@ Thumbs.db
 # Qdrant data
 qdrant_storage/
 
+# Benchmark datasets (download separately — see benchmarks/README.md)
+benchmarks/data/
+
 # Generated HTML
 *.html
 !openexp/static/*.html
-
-# Benchmark datasets (download separately — see benchmarks/README.md)
-benchmarks/data/

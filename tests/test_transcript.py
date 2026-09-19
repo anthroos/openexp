@@ -45,32 +45,32 @@ class TestParseTranscript:
     def test_user_message_string_content(self, tmp_path):
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
-            {"type": "user", "message": {"content": "Hello world"}, "timestamp": "2026-04-08T10:00:00Z", "uuid": "u1", "sessionId": "sess-1"},
+            {"type": "user", "message": {"content": "Hello world, this is a real question"}, "timestamp": "2026-04-08T10:00:00Z", "uuid": "u1", "sessionId": "sess-1"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "user"
-        assert msgs[0]["text"] == "Hello world"
+        assert msgs[0]["text"] == "Hello world, this is a real question"
         assert msgs[0]["session_id"] == "sess-1"
 
     def test_user_message_list_content(self, tmp_path):
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
-            {"type": "user", "message": {"content": [{"type": "text", "text": "How are you?"}]}, "timestamp": "2026-04-08T10:00:00Z", "uuid": "u2", "sessionId": "sess-2"},
+            {"type": "user", "message": {"content": [{"type": "text", "text": "How are you doing with the project?"}]}, "timestamp": "2026-04-08T10:00:00Z", "uuid": "u2", "sessionId": "sess-2"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 1
-        assert msgs[0]["text"] == "How are you?"
+        assert msgs[0]["text"] == "How are you doing with the project?"
 
     def test_assistant_message(self, tmp_path):
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "I'm fine, thanks!"}]}, "timestamp": "2026-04-08T10:01:00Z", "uuid": "a1", "sessionId": "sess-1"},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "I'm fine, thanks! Working on the pipeline."}]}, "timestamp": "2026-04-08T10:01:00Z", "uuid": "a1", "sessionId": "sess-1"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "assistant"
-        assert msgs[0]["text"] == "I'm fine, thanks!"
+        assert msgs[0]["text"] == "I'm fine, thanks! Working on the pipeline."
 
     def test_filters_system_reminders(self, tmp_path):
         p = tmp_path / "t.jsonl"
@@ -89,9 +89,11 @@ class TestParseTranscript:
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
             {"type": "user", "message": {"content": "hi"}, "timestamp": "", "uuid": "u4", "sessionId": "s1"},
+            # Bare acks under MIN_MESSAGE_CHARS (20) are recall noise
+            {"type": "user", "message": {"content": "що робити?"}, "timestamp": "", "uuid": "u5", "sessionId": "s1"},
         ])
         msgs = parse_transcript(p)
-        assert len(msgs) == 0  # "hi" is < MIN_MESSAGE_CHARS (10)
+        assert len(msgs) == 0
 
     def test_truncates_long_messages(self, tmp_path):
         p = tmp_path / "t.jsonl"
@@ -110,25 +112,25 @@ class TestParseTranscript:
             {"type": "assistant", "message": {"content": [
                 {"type": "thinking", "thinking": "let me think..."},
                 {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "ls"}},
-                {"type": "text", "text": "Here are the files."},
+                {"type": "text", "text": "Here are the files you asked about."},
             ]}, "timestamp": "", "uuid": "a2", "sessionId": "s1"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 1
-        assert msgs[0]["text"] == "Here are the files."
+        assert msgs[0]["text"] == "Here are the files you asked about."
 
     def test_skips_invalid_json_lines(self, tmp_path):
         p = tmp_path / "t.jsonl"
-        p.write_text('{"type": "user", "message": {"content": "valid message here"}, "uuid": "u6", "sessionId": "s1"}\n{broken json\n')
+        p.write_text('{"type": "user", "message": {"content": "valid message here with enough length"}, "uuid": "u6", "sessionId": "s1"}\n{broken json\n')
         msgs = parse_transcript(p)
         assert len(msgs) == 1
 
     def test_mixed_user_assistant(self, tmp_path):
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
-            {"type": "user", "message": {"content": "What is OpenExp?"}, "timestamp": "t1", "uuid": "u1", "sessionId": "s1"},
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "OpenExp is a memory system."}]}, "timestamp": "t2", "uuid": "a1", "sessionId": "s1"},
-            {"type": "user", "message": {"content": "Tell me more about it"}, "timestamp": "t3", "uuid": "u2", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "What is OpenExp and how does it work?"}, "timestamp": "t1", "uuid": "u1", "sessionId": "s1"},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "OpenExp is a memory system for agents."}]}, "timestamp": "t2", "uuid": "a1", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "Tell me more about how it stores data"}, "timestamp": "t3", "uuid": "u2", "sessionId": "s1"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 3
@@ -139,7 +141,7 @@ class TestParseTranscript:
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
             {"type": "tool_result", "content": "some result"},
-            {"type": "user", "message": {"content": "actual message here"}, "uuid": "u1", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "actual message here with enough length"}, "uuid": "u1", "sessionId": "s1"},
         ])
         msgs = parse_transcript(p)
         assert len(msgs) == 1
@@ -173,6 +175,16 @@ class TestSessionAlreadyIngested:
         result = _session_already_ingested(mock_client, "sess-789")
         assert result is False
 
+    def test_uses_exact_count(self):
+        mock_client = MagicMock()
+        CountResult = namedtuple("CountResult", ["count"])
+        mock_client.count.return_value = CountResult(count=0)
+
+        _session_already_ingested(mock_client, "sess-exact")
+
+        _, kwargs = mock_client.count.call_args
+        assert kwargs.get("exact") is True
+
 
 # ── ingest_transcript ────────────────────────────────────────
 
@@ -181,8 +193,8 @@ class TestIngestTranscript:
     def test_dry_run(self, tmp_path):
         p = tmp_path / "t.jsonl"
         _write_jsonl(p, [
-            {"type": "user", "message": {"content": "Hello world test"}, "uuid": "u1", "sessionId": "s1"},
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hi there, how can I help?"}]}, "uuid": "a1", "sessionId": "s1"},
+            {"type": "user", "message": {"content": "Hello world test with enough length"}, "uuid": "u1", "sessionId": "s1"},
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Hi there, how can I help you today?"}]}, "uuid": "a1", "sessionId": "s1"},
         ])
         result = ingest_transcript(p, session_id="s1", dry_run=True)
         assert result["dry_run"] is True

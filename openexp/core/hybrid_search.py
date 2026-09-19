@@ -1,11 +1,12 @@
 """Hybrid Search — BM25 keyword scoring alongside vector search.
 
 Pure Python implementation with no external dependencies.
-Combines semantic similarity, keyword relevance, recency, importance, and Q-values.
+Combines semantic similarity, keyword relevance, recency, and importance.
 """
 import math
 import re
 import logging
+from datetime import datetime, timezone
 from typing import List, Dict, Any
 from collections import Counter, defaultdict
 
@@ -16,12 +17,49 @@ DEFAULT_K1 = 1.5
 DEFAULT_B = 0.75
 
 # Default hybrid search weights
+# Base importance multiplier by memory type (moved from core/scoring.py when
+# its dead composite scorer was removed).
+TYPE_BOOST = {
+    "decision": 1.0,
+    "preference": 0.95,
+    "relationship": 0.9,
+    "insight": 0.9,
+    "procedure": 0.85,
+    "fact": 0.8,
+    "event": 0.7,
+    "intention": 0.75,
+    "plan": 0.85,
+    "commitment": 0.9,
+    "action": 0.8,
+    "outcome": 0.85,
+    "cancellation": 0.6,
+}
+
+RECENCY_HALF_LIFE_DAYS = 90.0
+
+
+def _compute_recency(created_str=None, half_life_days: float = RECENCY_HALF_LIFE_DAYS) -> float:
+    """Recency factor from ISO date string, exponential decay (0.5 fallback)."""
+    if not created_str:
+        return 0.5
+    try:
+        created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        age_days = (now - created_dt.replace(tzinfo=timezone.utc if created_dt.tzinfo is None else created_dt.tzinfo)).days
+        age_days = max(age_days, 0)
+        return math.exp(-0.693 * age_days / half_life_days)
+    except (ValueError, TypeError):
+        return 0.5
+
+
+# Q-value was dropped from the formula on 2026-07-03: after 8 months the mean
+# Q across the cache was 0.006, so its 0.10 weight contributed ~0.0006 to every
+# score — dead weight that also contradicted the documented ranking.
 DEFAULT_HYBRID_WEIGHTS = {
-    "w_semantic": 0.40,
+    "w_semantic": 0.45,
     "w_keyword": 0.15,
-    "w_recency": 0.20,
+    "w_recency": 0.25,
     "w_importance": 0.15,
-    "w_q_value": 0.10,
 }
 
 # Status weight multipliers for lifecycle integration
@@ -141,8 +179,6 @@ def hybrid_search(
                 documents.append(doc_text)
         corpus_stats = prepare_corpus_stats(documents)
 
-    from .scoring import _compute_recency, TYPE_BOOST
-
     scored_results = []
     for result in vector_results:
         doc_content = result.get("memory", result.get("content", ""))
@@ -164,26 +200,11 @@ def hybrid_search(
         status = payload.get("status", result.get("status", "active"))
         status_multiplier = STATUS_WEIGHTS.get(status, 1.0)
 
-        # Explicit None checks — 0.0 is a valid Q-value (downranked memory)
-        # Priority: top-level result (set by direct_search from q_cache) > payload > metadata > q_estimate > default
-        from .q_value import DEFAULT_Q_CONFIG
-        q_value = result.get("q_value")
-        if q_value is None:
-            q_value = payload.get("q_value")
-        if q_value is None:
-            q_value = metadata.get("q_value")
-        if q_value is None:
-            q_value = result.get("q_estimate")
-        if q_value is None:
-            q_value = DEFAULT_Q_CONFIG["q_init"]
-        w_q = weights.get("w_q_value", 0.0)
-
         hybrid_score = (
             weights["w_semantic"] * semantic_score +
             weights["w_keyword"] * normalized_keyword +
             weights["w_recency"] * recency +
-            weights["w_importance"] * weighted_importance +
-            w_q * q_value
+            weights["w_importance"] * weighted_importance
         ) * status_multiplier
 
         hybrid_score = max(0.0, min(1.0, hybrid_score))
@@ -195,11 +216,22 @@ def hybrid_search(
             "raw_bm25": keyword_score,
             "recency_score": recency,
             "importance_score": weighted_importance,
-            "q_value": q_value,
             "status_multiplier": status_multiplier,
             "status": status,
         })
         scored_results.append(enhanced_result)
 
     scored_results.sort(key=lambda x: x["hybrid_score"], reverse=True)
-    return scored_results[:top_k]
+
+    # Collapse duplicates (identical content ingested from resumed sessions
+    # or subagent transcripts) — keep the highest-scored copy of each text.
+    seen_texts = set()
+    deduped = []
+    for r in scored_results:
+        key = r.get("memory", r.get("content", ""))[:500]
+        if key in seen_texts:
+            continue
+        seen_texts.add(key)
+        deduped.append(r)
+
+    return deduped[:top_k]

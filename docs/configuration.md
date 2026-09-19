@@ -5,7 +5,7 @@ OpenExp is configured via environment variables. Copy `.env.example` to `.env` a
 ## Required
 
 ### Qdrant
-OpenExp uses Qdrant as its vector database. The setup script starts it via Docker automatically.
+OpenExp uses Qdrant as its vector database. If Qdrant is already reachable on `localhost:6333`, `setup.sh` uses that instance as-is — a native binary, a launchd/systemd unit, or a remote host all work. Otherwise the script starts a Docker container (`openexp-qdrant`) for you, so Docker is only required when you are not running Qdrant yourself.
 
 | Variable | Default | Description |
 |----------|---------|-------------|

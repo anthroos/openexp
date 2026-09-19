@@ -1,6 +1,9 @@
-> **⚠️ STALE — pre-2026-04-26 redesign.**
-> This document describes the v1 architecture (Q-learning, multiple reward paths, Experience Library labeling) which was removed or replaced on 2026-04-26.
-> See [redesign-2026-04-26.md](redesign-2026-04-26.md) and the [README](../README.md) for the current architecture.
+> **⚠️ HISTORICAL — describes the removed v1 architecture.**
+> Q-learning, the reward paths, and Experience Library labeling were deprecated on 2026-04-26
+> and fully deleted from the codebase on 2026-07-03. Several modules named below no longer exist.
+> Current pipeline: capture (`ingest/raw_store.py`) → distill (`ingest/distill.py`) → recall
+> (`core/direct_search.py` + `openexp raw show`). See [redesign-2026-04-26.md](redesign-2026-04-26.md)
+> and the [README](../README.md).
 
 ---
 
@@ -84,7 +87,7 @@ Converts raw observations (JSONL) into embedded vectors in Qdrant:
 3. **session_summary.py** — Parses session markdown files, creates higher-importance memories
 4. **reward.py** — Computes session productivity score, applies Q-value updates (all 3 layers)
 5. **retrieval_log.py** — Tracks which memories were recalled (for closed-loop reward)
-6. **watermark.py** — Idempotency: prevents duplicate ingestion
+6. **raw_store.py** — Layer 1 capture: byte-exact transcript copies into `~/.openexp/raw/`
 7. **extract_decisions.py** — Opus 4.6 extracts strategic decisions/insights from transcripts (Phase 2c)
 
 ### Outcome Resolution (`openexp/outcome.py` + `openexp/resolvers/`)
@@ -120,4 +123,4 @@ Shell scripts registered with Claude Code:
 | Retrieval log | `~/.openexp/data/session_retrievals.jsonl` | Which memories were recalled when |
 | Raw observations | `~/.openexp/observations/` | JSONL files per day |
 | Session summaries | `~/.openexp/sessions/` | Markdown files per session |
-| Ingest watermark | `~/.openexp/data/ingest_watermark.json` | Processed observation IDs |
+| Raw transcripts | `~/.openexp/raw/` | Byte-exact transcript copies (permanent, survives Claude Code rotation) |

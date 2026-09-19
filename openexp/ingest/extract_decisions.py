@@ -21,8 +21,13 @@ logger = logging.getLogger(__name__)
 # Opus 4.6 — quality of extraction determines quality of the entire memory system.
 # This is not a place to save money. This is the annotation layer.
 EXTRACT_MODEL = os.getenv("OPENEXP_EXTRACT_MODEL", "claude-opus-4-6")
-# Max chars of transcript to send to LLM (cost control)
+# Max chars of transcript per LLM call (cost control)
 EXTRACT_CONTEXT_LIMIT = int(os.getenv("OPENEXP_EXTRACT_CONTEXT_LIMIT", "30000"))
+# Max LLM calls per session. Until 2026-07-03 extraction saw only the LAST
+# 30K chars of a session — the start of any long session was invisible.
+# Now the transcript is chunked start-to-end; if it exceeds the cap, the
+# first chunk and the most recent chunks are kept.
+EXTRACT_MAX_CHUNKS = int(os.getenv("OPENEXP_EXTRACT_MAX_CHUNKS", "3"))
 
 EXTRACTION_PROMPT = """\
 You are analyzing a work session between a user and their AI assistant.
@@ -70,14 +75,15 @@ lead with social proof because enterprise clients trust references".
 """
 
 
-def read_transcript(transcript_path: Path, session_id: Optional[str] = None) -> str:
+def read_transcript(transcript_path: Path, session_id: Optional[str] = None) -> List[str]:
     """Read and format a Claude Code transcript for LLM extraction.
 
-    Returns a condensed text of user<>assistant exchanges,
-    skipping tool results, system messages, and other noise.
+    Returns condensed user<>assistant text as a list of chunks (each within
+    EXTRACT_CONTEXT_LIMIT, at most EXTRACT_MAX_CHUNKS), skipping tool
+    results, system messages, and other noise.
     """
     if not transcript_path.exists():
-        return ""
+        return []
 
     messages = []
     for line in transcript_path.read_text(encoding="utf-8").splitlines():
@@ -119,21 +125,29 @@ def read_transcript(transcript_path: Path, session_id: Optional[str] = None) -> 
             messages.append(("assistant", "\n".join(texts)))
 
     if not messages:
-        return ""
+        return []
 
-    # Build condensed transcript, respecting context limit
-    # Prioritize recent messages (most likely to contain decisions)
-    formatted = []
+    # Build condensed chunks covering the WHOLE transcript, in order
+    chunks: List[str] = []
+    current: List[str] = []
     total_chars = 0
-    for role, text in reversed(messages):
+    for role, text in messages:
         entry_text = f"{'USER' if role == 'user' else 'ASSISTANT'}: {text}\n"
-        if total_chars + len(entry_text) > EXTRACT_CONTEXT_LIMIT:
-            break
-        formatted.append(entry_text)
+        if total_chars + len(entry_text) > EXTRACT_CONTEXT_LIMIT and current:
+            chunks.append("\n".join(current))
+            current = []
+            total_chars = 0
+        current.append(entry_text)
         total_chars += len(entry_text)
+    if current:
+        chunks.append("\n".join(current))
 
-    formatted.reverse()
-    return "\n".join(formatted)
+    # Cap LLM calls: keep the opening chunk (context, choice points) plus
+    # the most recent chunks (where sessions usually resolve).
+    if len(chunks) > EXTRACT_MAX_CHUNKS:
+        chunks = [chunks[0]] + chunks[-(EXTRACT_MAX_CHUNKS - 1):]
+
+    return chunks
 
 
 def extract_decisions(
@@ -227,16 +241,27 @@ def extract_and_store(
     session_id: str,
     experience: str = "default",
     dry_run: bool = False,
+    distill_version: Optional[int] = None,
 ) -> Dict:
     """Full pipeline: read transcript → extract → store as memories.
 
     Returns summary of what was extracted and stored.
     """
-    transcript_text = read_transcript(transcript_path, session_id)
-    if not transcript_text:
+    chunks = read_transcript(transcript_path, session_id)
+    if not chunks:
         return {"extracted": 0, "reason": "empty_transcript"}
 
-    items = extract_decisions(transcript_text, session_id, experience)
+    # Extract per chunk, merge, dedupe by content
+    items: List[Dict] = []
+    seen_contents = set()
+    for chunk in chunks:
+        for item in extract_decisions(chunk, session_id, experience):
+            content = item.get("content", "").strip()
+            if not content or content in seen_contents:
+                continue
+            seen_contents.add(content)
+            items.append(item)
+
     if not items:
         return {"extracted": 0, "reason": "no_decisions_found"}
 
@@ -286,6 +311,8 @@ def extract_and_store(
                 "created_at": now,
                 "status": "active",
             }
+            if distill_version is not None:
+                payload["distill_version"] = distill_version
             if client_id:
                 payload["client_id"] = client_id
 
@@ -308,6 +335,7 @@ def extract_and_store(
     return {
         "extracted": len(items),
         "stored": stored,
+        "chunks": len(chunks),
         "experience": experience,
         "model": EXTRACT_MODEL,
     }

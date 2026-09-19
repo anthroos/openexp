@@ -1,0 +1,45 @@
+# Pack metadata — facts only, no interpretation.
+# Author labels (applies_when, summary, grade reason) intentionally absent.
+# The reader's Claude reads `trajectory.anonymized.yaml` and derives match
+# on the fly from the user's situation.
+
+pack:
+  id: d49e0997-8455-4d3c-90ca-d6cf54d0f662
+  author: ivan-pasichnyk
+  license: MIT
+  created_at: 2026-04-26T20:00:00Z
+  schema_version: 3
+
+  # Outcome — observable, not interpreted
+  outcome:
+    label: closed_won
+    closed_at: day_+57
+
+  # Structural facts — countable, derivable from trajectory.anonymized.yaml
+  duration_days: 57
+  step_count: 26
+
+  # Category tokens that appear in the trajectory.
+  # Used by readers to filter packs before reading the full timeline.
+  category_tokens:
+    - <central_bank_rate>
+    - <cloud_provider>
+    - <contract_internal_id>
+    - <counterparty_cto>
+    - <counterparty_pm>
+    - <e_signing_platform_local>
+    - <foreign_corp_entity>
+    - <founder>
+    - <local_currency>
+    - <local_individual_entity>
+    - <local_jurisdiction>
+    - <own_cto>
+    - <regulated_industry>
+
+  source_pipeline:
+    - prompts/anonymize.md
+    # No extract_experience.md step — pack is published raw, derivation
+    # happens on read.
+
+  # Human-readable face is in README.md.
+  # Claude entry point is in SKILL.md.

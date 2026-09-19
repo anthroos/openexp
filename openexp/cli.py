@@ -38,30 +38,23 @@ def cmd_search(args):
         print(f"Error: query too long ({len(args.query)} chars, max {MAX_QUERY_LENGTH})", file=sys.stderr)
         sys.exit(1)
 
-    from .core.config import Q_CACHE_PATH
-    from .core.q_value import QCache
     from .core import direct_search
 
     experience = _get_experience_name(args)
-
-    q_cache = QCache()
-    q_cache.load(Q_CACHE_PATH)
 
     results = direct_search.search_memories(
         query=args.query,
         limit=args.limit,
         memory_type=getattr(args, "type", None),
         exclude_type=getattr(args, "exclude_type", None),
-        q_cache=q_cache,
         experience=experience,
     )
 
     if args.format == "text":
         for r in results.get("results", []):
             score = r.get("hybrid_score", r.get("score", 0))
-            q_val = r.get("q_value", 0.5)
             content = r.get("memory", r.get("content", ""))[:200]
-            print(f"[sim={score:.2f} q={q_val:.2f}] {content}")
+            print(f"[sim={score:.2f}] {content}")
     else:
         print(json.dumps(results, indent=2, default=str))
 
@@ -151,6 +144,74 @@ def cmd_ingest(args):
               f"({result.get('user_messages', 0)} user, {result.get('assistant_messages', 0)} assistant){skip_msg}")
 
 
+def cmd_distill(args):
+    """Distill raw transcripts into Qdrant (versioned, re-runnable)."""
+    if not args.dry_run:
+        logging.getLogger("openexp.ingest").setLevel(logging.INFO)
+
+    from datetime import datetime
+    from .ingest.distill import distill_session, distill_all, DISTILL_VERSION
+    from .core.experience import get_active_experience
+
+    experience = get_active_experience().name
+
+    if args.session_id:
+        result = distill_session(
+            args.session_id,
+            experience=experience,
+            extract=not args.no_decisions,
+            dry_run=args.dry_run,
+            force=args.force,
+        )
+    elif args.all or args.since:
+        since = datetime.fromisoformat(args.since) if args.since else None
+        result = distill_all(
+            experience=experience,
+            since=since,
+            extract=not args.no_decisions,
+            dry_run=args.dry_run,
+            force=args.force,
+            progress=not args.dry_run,
+        )
+    else:
+        print("Specify --session-id, --since, or --all", file=sys.stderr)
+        sys.exit(1)
+
+    print(json.dumps(result, indent=2, default=str))
+    print(f"\nDistill version: {DISTILL_VERSION}")
+
+
+def cmd_raw(args):
+    """Raw transcript store operations (capture layer + deep recall)."""
+    from pathlib import Path
+    from .ingest.raw_store import backfill, read_raw
+
+    if args.raw_cmd == "backfill":
+        result = backfill(
+            projects_dir=Path(args.projects_dir) if args.projects_dir else None,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(result, indent=2))
+        if args.dry_run:
+            print(f"\n[dry-run] Would archive up to {result['found']} transcripts")
+        else:
+            print(f"\nArchived: {result['archived']} new, {result['skipped']} already current, "
+                  f"{result['errors']} errors")
+
+    elif args.raw_cmd == "show":
+        if not args.session_id:
+            print("raw show requires --session-id", file=sys.stderr)
+            sys.exit(1)
+        result = read_raw(args.session_id, grep=args.grep, context=args.context)
+        if not result["found"]:
+            print(f"No raw transcript for session {args.session_id}", file=sys.stderr)
+            sys.exit(1)
+        for line in result["lines"]:
+            print(line)
+        print(f"\n# {len(result['lines'])}/{result['total_lines']} lines from {result['path']}",
+              file=sys.stderr)
+
+
 def cmd_log_retrieval(args):
     """Log which memories were retrieved at session start."""
     from .ingest.retrieval_log import log_retrieval
@@ -174,13 +235,13 @@ def cmd_log_retrieval(args):
 
 
 def cmd_resolve(args):
-    """Run outcome resolvers to detect CRM changes and apply rewards."""
+    """Run outcome resolvers to detect CRM changes and resolve predictions."""
     logging.getLogger("openexp").setLevel(logging.INFO)
 
-    from .core.config import Q_CACHE_PATH
-    from .core.q_value import QCache, QValueUpdater
+    from .core.config import DATA_DIR
     from .ingest import _load_configured_resolvers
     from .outcome import resolve_outcomes
+    from .reward_tracker import RewardTracker
 
     experience = _get_experience_name(args)
 
@@ -189,26 +250,17 @@ def cmd_resolve(args):
         print("No outcome resolvers configured. Set OPENEXP_OUTCOME_RESOLVERS in .env")
         sys.exit(1)
 
-    q_cache = QCache()
-    q_cache.load(Q_CACHE_PATH)
-    q_updater = QValueUpdater(cache=q_cache)
-
     result = resolve_outcomes(
         resolvers=resolvers,
-        q_cache=q_cache,
-        q_updater=q_updater,
+        reward_tracker=RewardTracker(data_dir=DATA_DIR, experience=experience),
         experience=experience,
     )
-
-    if result.get("total_events", 0) > 0:
-        q_cache.save(Q_CACHE_PATH)
 
     print(json.dumps(result, indent=2, default=str))
 
     events = result.get("total_events", 0)
-    rewarded = result.get("memories_rewarded", 0)
     resolved = result.get("predictions_resolved", 0)
-    print(f"\nOutcomes: {events} events, {rewarded} memories rewarded, {resolved} predictions resolved")
+    print(f"\nOutcomes: {events} events, {resolved} predictions resolved")
 
 
 def cmd_viz(args):
@@ -309,31 +361,24 @@ def cmd_viz(args):
 
 def cmd_stats(args):
     """Show memory system stats."""
-    from .core.config import Q_CACHE_PATH
-    from .core.q_value import QCache
+    from .core.config import DATA_DIR, COLLECTION_NAME
+    from .core.direct_search import _get_qdrant
+    from .reward_tracker import RewardTracker
 
     experience = _get_experience_name(args)
-
-    q_cache = QCache()
-    q_cache.load(Q_CACHE_PATH)
-
-    print(f"Q-cache entries: {len(q_cache._cache)}")
     print(f"Active experience: {experience}")
 
-    stats = q_cache.get_experience_stats(experience)
-    if stats["count"] > 0:
-        print(f"Experience '{experience}': {stats['count']} memories with Q-data")
-        print(f"  Q-value range: [{stats['min']:.3f}, {stats['max']:.3f}]")
-        print(f"  Q-value mean:  {stats['mean']:.3f}")
-    else:
-        print(f"Experience '{experience}': no Q-data yet")
+    try:
+        qc = _get_qdrant()
+        info = qc.get_collection(COLLECTION_NAME)
+        print(f"Qdrant points: {info.points_count}")
+    except Exception as e:
+        print(f"Qdrant unavailable: {e}")
 
-    # Show other experiences if any
-    all_exps = set()
-    for exp_dict in q_cache._cache.values():
-        all_exps.update(exp_dict.keys())
-    if len(all_exps) > 1:
-        print(f"\nAll experiences in cache: {', '.join(sorted(all_exps))}")
+    tracker = RewardTracker(data_dir=DATA_DIR, experience=experience)
+    stats = tracker.get_prediction_stats()
+    print(f"Predictions: {stats['total']} total, {stats['resolved']} resolved, "
+          f"{stats['pending']} pending")
 
 
 def _rating_to_weight(rating: int) -> float:
@@ -752,26 +797,29 @@ def cmd_experience(args):
         _experience_create_wizard()
 
     elif subcmd == "stats":
-        from .core.config import Q_CACHE_PATH
-        from .core.q_value import QCache
+        from .core.config import COLLECTION_NAME
+        from .core.direct_search import _get_qdrant
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
 
-        q_cache = QCache()
-        q_cache.load(Q_CACHE_PATH)
-
-        # Collect all experiences
-        all_exps = set()
-        for exp_dict in q_cache._cache.values():
-            all_exps.update(exp_dict.keys())
-
-        if not all_exps:
-            print("No experience data in Q-cache yet.")
+        try:
+            qc = _get_qdrant()
+        except Exception as e:
+            print(f"Qdrant unavailable: {e}")
             return
 
-        for exp_name in sorted(all_exps):
-            stats = q_cache.get_experience_stats(exp_name)
-            print(f"{exp_name}: {stats['count']} memories, "
-                  f"Q mean={stats['mean']:.3f}, "
-                  f"range=[{stats['min']:.3f}, {stats['max']:.3f}]")
+        from .core.experience import list_experiences
+        for exp in list_experiences():
+            try:
+                cnt = qc.count(
+                    collection_name=COLLECTION_NAME,
+                    count_filter=Filter(must=[
+                        FieldCondition(key="experience", match=MatchValue(value=exp.name)),
+                    ]),
+                    exact=True,
+                )
+                print(f"{exp.name}: {cnt.count} memories")
+            except Exception as e:
+                print(f"{exp.name}: count failed ({e})")
     else:
         print("Usage: openexp experience {list|show|stats}")
         sys.exit(1)
@@ -862,6 +910,26 @@ def main():
     sp_ingest.add_argument("--all", action="store_true", help="Scan all project dirs (not just main)")
     sp_ingest.add_argument("--force", action="store_true", help="Re-ingest even if already stored")
 
+    # distill
+    sp_distill = sub.add_parser("distill", help="Distill raw transcripts into Qdrant (versioned, re-runnable)")
+    sp_distill.add_argument("--session-id", default=None, help="Specific session ID to distill")
+    sp_distill.add_argument("--all", action="store_true", help="Distill every session in the raw store")
+    sp_distill.add_argument("--since", default=None, help="Only sessions modified since date (YYYY-MM-DD)")
+    sp_distill.add_argument("--no-decisions", action="store_true",
+                            help="Skip LLM decision extraction (transcript points only; keeps existing decisions)")
+    sp_distill.add_argument("--dry-run", action="store_true", help="Preview without writing")
+    sp_distill.add_argument("--force", action="store_true", help="Re-distill even if already at current version")
+
+    # raw
+    sp_raw = sub.add_parser("raw", help="Raw transcript store (capture layer + deep recall)")
+    sp_raw.add_argument("raw_cmd", choices=["backfill", "show"], help="Subcommand")
+    sp_raw.add_argument("--projects-dir", default=None,
+                        help="Claude projects dir (default ~/.claude/projects)")
+    sp_raw.add_argument("--dry-run", action="store_true", help="Count without copying")
+    sp_raw.add_argument("--session-id", default=None, help="Session to show (for show)")
+    sp_raw.add_argument("--grep", default=None, help="Only lines matching this substring (case-insensitive)")
+    sp_raw.add_argument("--context", type=int, default=2, help="Context lines around each grep match")
+
     # log-retrieval
     sp_log = sub.add_parser("log-retrieval", help="Log retrieved memory IDs for a session")
     sp_log.add_argument("--session-id", required=True, help="Session ID")
@@ -919,6 +987,10 @@ def main():
         cmd_search(args)
     elif args.cmd == "ingest":
         cmd_ingest(args)
+    elif args.cmd == "distill":
+        cmd_distill(args)
+    elif args.cmd == "raw":
+        cmd_raw(args)
     elif args.cmd == "log-retrieval":
         cmd_log_retrieval(args)
     elif args.cmd == "resolve":

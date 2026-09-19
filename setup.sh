@@ -1,79 +1,16 @@
 #!/bin/bash
-# OpenExp Setup — persistent memory layer for Claude Code
-# Usage: ./setup.sh [-h|--help]
+# OpenExp Setup — Q-learning memory for Claude Code
+# Usage: ./setup.sh
 #
 # This script:
 # 1. Creates Python venv + installs deps
-# 2. Starts Qdrant (Docker) if not running
+# 2. Ensures Qdrant is reachable on :6333 (reuses a running one, else starts it in Docker)
 # 3. Creates Qdrant collection
 # 4. Copies .env.example → .env
 # 5. Registers MCP server in Claude Code settings
 # 6. Registers hooks in Claude Code settings
 # 7. Verifies everything works
 set -euo pipefail
-
-usage() {
-  cat <<EOF
-Usage: ./setup.sh [OPTIONS]
-
-Set up OpenExp — persistent memory layer for Claude Code.
-
-Steps performed:
-  1. Check prerequisites (Python 3.11+, Docker, jq, Claude Code CLI)
-  2. Create Python venv and install dependencies
-  3. Start Qdrant vector database (Docker)
-  4. Create Qdrant collection
-  5. Copy .env.example → .env
-  6. Register MCP server + hooks in Claude Code settings
-  7. Verify installation
-
-Options:
-  -h, --help    Show this help message and exit
-
-Environment variables:
-  QDRANT_API_KEY          Optional. Auth key passed to Qdrant container.
-  OPENEXP_DATA_DIR        Override default data directory (~/.openexp/data).
-  OPENEXP_EXPERIENCE      Active experience profile (default: "default").
-  OPENEXP_COLLECTION      Qdrant collection name (default: "openexp_memories").
-
-Hooks registered (auto-activate on every claude session):
-  SessionStart       Inject top-10 relevant memories as context
-  UserPromptSubmit   Recall top-5 memories per message; auto-detect experience
-  PostToolUse        Capture observations from Write/Edit/Bash tool calls
-  SessionEnd         Extract decisions + ingest full transcript (background)
-
-MCP tools available inside Claude Code:
-  search_memory      Hybrid vector+BM25 search with Q-reranking
-  add_memory         Store a memory with embedding
-  log_prediction     Record a prediction grounded to an experience pack step
-  log_outcome        Resolve a prediction with observed facts (active feedback loop)
-  memory_stats       System health: point counts, pending predictions
-
-After setup:
-  claude                                                   Start Claude Code
-  openexp search -q 'your query'                          Search memories
-  openexp ingest                                           Ingest past Claude sessions
-  openexp stats                                            Memory system health
-  openexp experience list                                  List experience profiles
-  openexp experience create                                Interactive experience wizard
-  openexp retrospective daily                              Run daily analysis
-  openexp viz                                              Generate HTML dashboard
-  openexp compact                                          Merge similar memories
-
-Experience profiles (auto-detected from project keywords):
-  default     Software engineering (commits, PRs, deploys)
-  sales       Sales & outreach (leads, proposals, deals)
-  dealflow    Deal pipeline (NDA, invoice, payment)
-
-Per-project experience override: add .openexp.yaml to project root.
-EOF
-}
-
-for arg in "$@"; do
-  case "$arg" in
-    -h|--help) usage; exit 0 ;;
-  esac
-done
 
 OPENEXP_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_SETTINGS="$HOME/.claude/settings.local.json"
@@ -102,13 +39,22 @@ if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 11 ]; }
 fi
 echo "  ✅ Python $PY_VERSION"
 
-# Docker
-if ! command -v docker &>/dev/null; then
-  echo "❌ Docker not found. Install Docker Desktop first."
-  echo "  → https://www.docker.com/products/docker-desktop/"
+# Qdrant: either already running, or Docker available to start it.
+# Docker is not a hard requirement — a native Qdrant binary works just as well.
+QDRANT_ALREADY_UP=0
+if curl -sf http://localhost:6333/healthz >/dev/null 2>&1; then
+  QDRANT_ALREADY_UP=1
+  echo "  ✅ Qdrant already reachable on :6333"
+elif command -v docker &>/dev/null; then
+  echo "  ✅ Docker (will be used to start Qdrant)"
+else
+  echo "❌ Qdrant is not running on :6333 and Docker is not installed."
+  echo "   Pick one:"
+  echo "   • Docker Desktop → https://www.docker.com/products/docker-desktop/"
+  echo "   • Native binary  → https://github.com/qdrant/qdrant/releases"
+  echo "     then run it with QDRANT__STORAGE__STORAGE_PATH=<dir> and re-run this script."
   exit 1
 fi
-echo "  ✅ Docker"
 
 # jq
 if ! command -v jq &>/dev/null; then
@@ -136,12 +82,18 @@ fi
 echo "  ✅ Dependencies installed"
 echo ""
 
-# --- Step 3: Start Qdrant ---
+# --- Step 3: Ensure Qdrant is up ---
 echo "Step 3/7: Starting Qdrant..."
-if docker ps --format '{{.Names}}' | grep -q '^openexp-qdrant$'; then
-  echo "  ✅ Qdrant already running"
+if [ "$QDRANT_ALREADY_UP" -eq 1 ]; then
+  # Someone else owns this Qdrant (native binary, systemd/launchd unit, remote host,
+  # or a container under a different name). Leave it alone.
+  echo "  ✅ Using the Qdrant already listening on :6333"
 else
-  if docker ps -a --format '{{.Names}}' | grep -q '^openexp-qdrant$'; then
+  # Not reachable on :6333. Bring our own container up, then wait for it —
+  # a container can be "running" while Qdrant inside is not serving yet.
+  if docker ps --format '{{.Names}}' | grep -q '^openexp-qdrant$'; then
+    echo "  Container openexp-qdrant is up but not answering yet."
+  elif docker ps -a --format '{{.Names}}' | grep -q '^openexp-qdrant$'; then
     docker start openexp-qdrant >/dev/null
   else
     DOCKER_ARGS=(-d --name openexp-qdrant --restart unless-stopped

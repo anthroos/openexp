@@ -6,9 +6,8 @@ from openexp.core.compaction import (
     _cosine_similarity,
     find_clusters,
     compute_merged_content,
-    compute_merged_q,
+    compute_cluster_kappa,
 )
-from openexp.core.q_value import QCache
 
 
 DIM = 384
@@ -147,60 +146,27 @@ class TestComputeMergedContent:
         assert "real content" in merged
 
 
-class TestComputeMergedQ:
-    def test_basic_q_merge(self):
+class TestComputeClusterKappa:
+    def test_kappa_positive(self):
         rng = np.random.RandomState(42)
         base = rng.randn(DIM)
         base /= np.linalg.norm(base)
 
         cluster = _make_similar_memories(base, count=3)
-        q_cache = QCache()
+        kappa = compute_cluster_kappa(cluster)
+        assert kappa > 0
 
-        # Set Q-values for originals
-        for i, mem in enumerate(cluster):
-            q_cache.set(mem["id"], {
-                "q_value": 0.5 + i * 0.1,
-                "q_action": 0.5 + i * 0.1,
-                "q_hypothesis": 0.5,
-                "q_fit": 0.5,
-                "q_visits": 2,
-                "last_reward": 0.1,
-            })
-
-        result = compute_merged_q(cluster, q_cache, "default")
-        assert 0.0 <= result["q_value"] <= 1.0
-        assert result["q_visits"] == 6  # Sum of visits
-        assert result["kappa"] > 0  # Stiffness should be positive
-        assert "q_action" in result
-        assert "q_hypothesis" in result
-        assert "q_fit" in result
-
-    def test_no_q_data_defaults(self):
+    def test_kappa_high_when_tight(self):
         rng = np.random.RandomState(42)
         base = rng.randn(DIM)
         base /= np.linalg.norm(base)
 
-        cluster = _make_similar_memories(base, count=3)
-        q_cache = QCache()  # Empty cache
+        # Identical vectors → zero variance → kappa capped by the 0.01 floor
+        cluster = [
+            {"id": f"m{i}", "vector": base.tolist(), "payload": {}}
+            for i in range(3)
+        ]
+        kappa = compute_cluster_kappa(cluster)
+        assert kappa >= 50
 
-        result = compute_merged_q(cluster, q_cache, "default")
-        # Should default to 0.5
-        assert abs(result["q_value"] - 0.5) < 0.1
 
-    def test_kappa_high_when_consistent(self):
-        rng = np.random.RandomState(42)
-        base = rng.randn(DIM)
-        base /= np.linalg.norm(base)
-
-        cluster = _make_similar_memories(base, count=3)
-        q_cache = QCache()
-
-        # Same reward for all
-        for mem in cluster:
-            q_cache.set(mem["id"], {
-                "q_action": 0.6, "q_hypothesis": 0.5, "q_fit": 0.5,
-                "q_value": 0.56, "q_visits": 1, "last_reward": 0.2,
-            })
-
-        result = compute_merged_q(cluster, q_cache, "default")
-        assert result["kappa"] >= 50  # Low variance → high kappa

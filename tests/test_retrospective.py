@@ -15,12 +15,9 @@ from openexp.retrospective import (
     _is_already_done,
     _mark_done,
     gather_daily_data,
-    apply_adjustments,
     analyze_with_llm,
     run_retrospective,
-    save_daily_q_stats,
 )
-from openexp.core.q_value import QCache, QValueUpdater
 
 
 @pytest.fixture
@@ -33,29 +30,9 @@ def tmp_data_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr("openexp.retrospective.DATA_DIR", data_dir)
     monkeypatch.setattr("openexp.retrospective.WATERMARK_PATH", data_dir / "retrospective_watermark.json")
-    monkeypatch.setattr("openexp.retrospective.Q_STATS_PATH", data_dir / "q_stats_daily.jsonl")
-    monkeypatch.setattr("openexp.retrospective.Q_CACHE_PATH", data_dir / "q_cache.json")
     monkeypatch.setattr("openexp.retrospective.SESSIONS_DIR", sessions_dir)
-    monkeypatch.setattr("openexp.retrospective.REWARD_LOG_PATH", data_dir / "reward_log.jsonl")
 
     return tmp_path
-
-
-@pytest.fixture
-def q_cache_with_memories():
-    """Create a QCache with some test memories."""
-    cache = QCache()
-    for i in range(5):
-        mem_id = f"mem-{i:04d}"
-        cache.set(mem_id, {
-            "q_value": 0.1 * i,
-            "q_action": 0.1 * i,
-            "q_hypothesis": 0.1 * i,
-            "q_fit": 0.1 * i,
-            "q_visits": i,
-            "q_updated_at": datetime.now(timezone.utc).isoformat(),
-        })
-    return cache
 
 
 # ---------------------------------------------------------------------------
@@ -85,209 +62,6 @@ class TestWatermark:
 
 # ---------------------------------------------------------------------------
 # set_q_value tests
-# ---------------------------------------------------------------------------
-
-class TestSetQValue:
-    def test_set_q_value_basic(self):
-        cache = QCache()
-        cache.set("mem-1", {
-            "q_value": 0.0, "q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0,
-            "q_visits": 0,
-        })
-        updater = QValueUpdater(cache=cache)
-        result = updater.set_q_value("mem-1", 0.5)
-
-        assert result["q_value"] == pytest.approx(0.5, abs=0.05)
-        assert result["q_visits"] == 1
-
-    def test_set_q_value_respects_ceiling(self):
-        cache = QCache()
-        cache.set("mem-1", {
-            "q_value": 0.8, "q_action": 0.8, "q_hypothesis": 0.8, "q_fit": 0.8,
-            "q_visits": 0,
-        })
-        updater = QValueUpdater(cache=cache)
-        result = updater.set_q_value("mem-1", 2.0)  # above ceiling
-        assert result["q_value"] <= 1.0
-
-    def test_set_q_value_respects_floor(self):
-        cache = QCache()
-        cache.set("mem-1", {
-            "q_value": 0.0, "q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0,
-            "q_visits": 0,
-        })
-        updater = QValueUpdater(cache=cache)
-        result = updater.set_q_value("mem-1", -2.0)  # below floor
-        assert result["q_value"] >= -0.5
-
-    def test_set_q_value_no_change(self):
-        cache = QCache()
-        cache.set("mem-1", {
-            "q_value": 0.5, "q_action": 0.5, "q_hypothesis": 0.5, "q_fit": 0.5,
-            "q_visits": 3,
-        })
-        updater = QValueUpdater(cache=cache)
-        result = updater.set_q_value("mem-1", 0.5)
-        assert result["q_visits"] == 3  # no change, no visit increment
-
-    def test_set_q_value_adds_context(self):
-        cache = QCache()
-        cache.set("mem-1", {
-            "q_value": 0.0, "q_action": 0.0, "q_hypothesis": 0.0, "q_fit": 0.0,
-            "q_visits": 0,
-        })
-        updater = QValueUpdater(cache=cache)
-        result = updater.set_q_value("mem-1", 0.5, reward_context="test override")
-        contexts = result.get("reward_contexts", [])
-        assert len(contexts) == 1
-        assert "[override]" in contexts[0]
-
-
-# ---------------------------------------------------------------------------
-# Apply adjustments tests
-# ---------------------------------------------------------------------------
-
-def _mock_qdrant_with_ids(valid_ids):
-    """Create a mock Qdrant client that returns points for valid_ids."""
-    from unittest.mock import MagicMock
-    mock_client = MagicMock()
-    def _retrieve(collection_name, ids):
-        result = []
-        for mid in ids:
-            if mid in valid_ids:
-                p = MagicMock()
-                p.id = mid
-                result.append(p)
-        return result
-    mock_client.retrieve.side_effect = _retrieve
-    return mock_client
-
-
-class TestApplyAdjustments:
-    @pytest.fixture(autouse=True)
-    def _mock_qdrant(self):
-        """Mock Qdrant to accept all mem-NNNN test fixture IDs."""
-        from unittest.mock import patch
-        valid = {f"mem-{i:04d}" for i in range(5)}
-        mock = _mock_qdrant_with_ids(valid)
-        with patch("openexp.core.direct_search._get_qdrant", return_value=mock):
-            yield
-
-    def test_promote(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        adjustments = [
-            {"memory_id": "mem-0001", "action": "promote", "reward": 0.3, "reason": "test"},
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.DAILY,
-            q_cache_with_memories, updater,
-        )
-        assert result["applied"] == 1
-        assert result["skipped"] == 0
-
-        q_data = q_cache_with_memories.get("mem-0001")
-        assert q_data["q_value"] > 0.1  # was 0.1, should be higher
-
-    def test_demote(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        adjustments = [
-            {"memory_id": "mem-0003", "action": "demote", "reward": 0.2, "reason": "false progress"},
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.WEEKLY,
-            q_cache_with_memories, updater,
-        )
-        assert result["applied"] == 1
-        q_data = q_cache_with_memories.get("mem-0003")
-        assert q_data["q_value"] < 0.3  # was 0.3, should be lower
-
-    def test_override(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        adjustments = [
-            {"memory_id": "mem-0002", "action": "override", "reward": 0, "target_q": 0.8, "reason": "manual"},
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.DAILY,
-            q_cache_with_memories, updater,
-        )
-        assert result["applied"] == 1
-        q_data = q_cache_with_memories.get("mem-0002")
-        assert q_data["q_value"] == pytest.approx(0.8, abs=0.05)
-
-    def test_skip_unknown_memory(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        adjustments = [
-            {"memory_id": "nonexistent-id", "action": "promote", "reward": 0.3, "reason": "test"},
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.DAILY,
-            q_cache_with_memories, updater,
-        )
-        assert result["applied"] == 0
-        assert result["skipped"] == 1
-
-    def test_skip_orphan_memory_not_in_qdrant(self, q_cache_with_memories):
-        """Memory exists in Q-cache but NOT in Qdrant — should be skipped."""
-        from unittest.mock import patch
-        # Mock Qdrant to return empty for mem-0001 (simulating orphan)
-        mock = _mock_qdrant_with_ids(set())  # nothing exists in Qdrant
-        with patch("openexp.core.direct_search._get_qdrant", return_value=mock):
-            updater = QValueUpdater(cache=q_cache_with_memories)
-            adjustments = [
-                {"memory_id": "mem-0001", "action": "promote", "reward": 0.3, "reason": "test"},
-            ]
-            result = apply_adjustments(
-                adjustments, RetroLevel.DAILY,
-                q_cache_with_memories, updater,
-            )
-        assert result["applied"] == 0
-        assert result["skipped"] == 1
-
-    def test_qdrant_unavailable_falls_back_to_cache(self, q_cache_with_memories):
-        """If Qdrant is unavailable, fall back to Q-cache-only validation."""
-        from unittest.mock import patch
-        with patch("openexp.core.direct_search._get_qdrant", side_effect=Exception("connection refused")):
-            updater = QValueUpdater(cache=q_cache_with_memories)
-            adjustments = [
-                {"memory_id": "mem-0001", "action": "promote", "reward": 0.3, "reason": "test"},
-            ]
-            result = apply_adjustments(
-                adjustments, RetroLevel.DAILY,
-                q_cache_with_memories, updater,
-            )
-        assert result["applied"] == 1  # should still work via Q-cache
-
-    def test_max_adjustments_cap(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        # Create 25 adjustments (over MAX_ADJUSTMENTS=20)
-        adjustments = [
-            {"memory_id": "mem-0001", "action": "promote", "reward": 0.01, "reason": f"test-{i}"}
-            for i in range(25)
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.DAILY,
-            q_cache_with_memories, updater,
-        )
-        assert result["applied"] == 20  # capped
-
-    def test_dry_run(self, q_cache_with_memories):
-        updater = QValueUpdater(cache=q_cache_with_memories)
-        original_q = q_cache_with_memories.get("mem-0001")["q_value"]
-        adjustments = [
-            {"memory_id": "mem-0001", "action": "promote", "reward": 0.5, "reason": "test"},
-        ]
-        result = apply_adjustments(
-            adjustments, RetroLevel.DAILY,
-            q_cache_with_memories, updater,
-            dry_run=True,
-        )
-        assert result["applied"] == 1
-        # Q-value should NOT have changed
-        assert q_cache_with_memories.get("mem-0001")["q_value"] == original_q
-
-
-# ---------------------------------------------------------------------------
-# LLM response parsing
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeWithLLM:
@@ -364,27 +138,6 @@ class TestAnalyzeWithLLM:
 # Daily Q stats
 # ---------------------------------------------------------------------------
 
-class TestDailyQStats:
-    def test_save_stats(self, tmp_data_dir):
-        cache = QCache()
-        for i in range(10):
-            cache.set(f"m-{i}", {"q_value": 0.1 * i, "q_action": 0, "q_hypothesis": 0, "q_fit": 0, "q_visits": 0})
-        cache_path = tmp_data_dir / "data" / "q_cache.json"
-        cache.save(cache_path)
-
-        save_daily_q_stats("2026-04-07")
-
-        stats_path = tmp_data_dir / "data" / "q_stats_daily.jsonl"
-        assert stats_path.exists()
-        record = json.loads(stats_path.read_text().strip())
-        assert record["date"] == "2026-04-07"
-        assert record["count"] == 10
-
-
-# ---------------------------------------------------------------------------
-# Idempotency integration
-# ---------------------------------------------------------------------------
-
 class TestIdempotency:
     def test_already_done_skips(self, tmp_data_dir):
         _mark_done(RetroLevel.DAILY, "2026-04-07", "mem-existing")
@@ -396,5 +149,7 @@ class TestIdempotency:
         mock_gather.assert_not_called()
 
     def test_no_data_returns_early(self, tmp_data_dir):
-        result = run_retrospective(RetroLevel.DAILY, "2026-04-07")
+        empty = {"date": "2026-04-07", "sessions": [], "memories": []}
+        with patch("openexp.retrospective.gather_daily_data", return_value=empty):
+            result = run_retrospective(RetroLevel.DAILY, "2026-04-07")
         assert result["status"] == "no_data"

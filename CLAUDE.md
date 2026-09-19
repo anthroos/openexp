@@ -42,13 +42,11 @@ This is the active feedback path — verified outcomes flow back to the memories
 - `openexp/mcp_server.py` — MCP STDIO server (5 tools: search_memory, add_memory, log_prediction, log_outcome, memory_stats)
 - `openexp/cli.py` — CLI (search, ingest, chunk, topics, stats, compact, experience, viz)
 - `scripts/batch_label.py` — Batch experience labeling across all threads
-- `tests/` — 300 tests across 13 files
+- `tests/` — pytest suite (run it, don't trust counts written in docs)
 
 ## Q-values — status
 
-Public README states Q-learning was removed on 2026-04-26 because mean Q across 27k memories was 0.006 and 90% of memories never received any reward signal. **What that actually meant:** the session-heuristic reward path (commit +0.3, PR +0.2, etc.) was removed; the storage-level `q_value` field is still present but no longer the primary ranking signal. The active feedback path is the **prediction → outcome loop** (`log_prediction` / `log_outcome`) — verified, not heuristic.
-
-If you find a code path that still relies on heuristic Q-updates from session events, treat it as a deletion candidate, not as canonical behavior.
+Fully deleted on 2026-07-03 (mean Q across the cache was 0.006 after 8 months; 97% of entries were exactly 0.0). Ranking is semantic + BM25 + recency + importance (`core/hybrid_search.py`), nothing else. `~/.openexp/data/q_cache.json` and `reward_log.jsonl` remain on disk as frozen history, read only by `viz.py` for replay dashboards. The prediction → outcome loop (`log_prediction` / `log_outcome`) is a pure journal — it records data for the experience corpus and updates no ranking signal.
 
 ## Development Workflow
 

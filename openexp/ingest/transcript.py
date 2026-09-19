@@ -20,10 +20,12 @@ from ..core.direct_search import _embed, _get_qdrant
 
 logger = logging.getLogger(__name__)
 
-# Max characters per message to store (very long tool outputs get truncated)
+# Max characters per message to store (very long tool outputs get truncated;
+# the byte-exact raw store keeps the full text for deep recall)
 MAX_MESSAGE_CHARS = 5000
-# Minimum message length worth storing
-MIN_MESSAGE_CHARS = 10
+# Minimum message length worth storing. 20 filters out bare acks and
+# one-word commands («що робити?», "ok do it") that polluted recall at 10.
+MIN_MESSAGE_CHARS = 20
 # Batch size for Qdrant upserts
 UPSERT_BATCH_SIZE = 50
 
@@ -126,7 +128,7 @@ def _session_already_ingested(client, session_id: str) -> bool:
                     FieldCondition(key="source", match=MatchValue(value="transcript")),
                 ]
             ),
-            exact=False,  # approximate is fine for existence check
+            exact=True,
         )
         return result.count > 0
     except Exception as e:
@@ -140,6 +142,7 @@ def ingest_transcript(
     experience: str = "default",
     dry_run: bool = False,
     force: bool = False,
+    distill_version: Optional[int] = None,
 ) -> Dict:
     """Full pipeline: parse transcript → embed → store in Qdrant.
 
@@ -155,6 +158,19 @@ def ingest_transcript(
     messages = parse_transcript(transcript_path)
     if not messages:
         return {"stored": 0, "reason": "no_messages"}
+
+    # Dedup within the session: resumed/compacted sessions repeat earlier
+    # messages verbatim; store each distinct text once (first occurrence).
+    seen_texts = set()
+    deduped = []
+    for msg in messages:
+        key = msg["text"]
+        if key in seen_texts:
+            continue
+        seen_texts.add(key)
+        deduped.append(msg)
+    duplicates_skipped = len(messages) - len(deduped)
+    messages = deduped
 
     if dry_run:
         return {
@@ -196,6 +212,8 @@ def ingest_transcript(
                 "created_at": msg.get("timestamp") or datetime.now(timezone.utc).isoformat(),
                 "status": "active",
             }
+            if distill_version is not None:
+                payload["distill_version"] = distill_version
 
             points_batch.append(PointStruct(
                 id=point_id,
@@ -238,6 +256,7 @@ def ingest_transcript(
         "stored": stored,
         "user_messages": sum(1 for m in messages if m["role"] == "user"),
         "assistant_messages": sum(1 for m in messages if m["role"] == "assistant"),
+        "duplicates_skipped": duplicates_skipped,
         "session_id": session_id,
         "experience": experience,
     }

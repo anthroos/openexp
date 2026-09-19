@@ -1,6 +1,9 @@
-> **⚠️ STALE — pre-2026-04-26 redesign.**
-> This document describes the v1 architecture (Q-learning, multiple reward paths, Experience Library labeling) which was removed or replaced on 2026-04-26.
-> See [redesign-2026-04-26.md](redesign-2026-04-26.md) and the [README](../README.md) for the current architecture.
+> **⚠️ HISTORICAL — describes the removed v1 architecture.**
+> Q-learning, the reward paths, and Experience Library labeling were deprecated on 2026-04-26
+> and fully deleted from the codebase on 2026-07-03. Several modules named below no longer exist.
+> Current pipeline: capture (`ingest/raw_store.py`) → distill (`ingest/distill.py`) → recall
+> (`core/direct_search.py` + `openexp raw show`). See [redesign-2026-04-26.md](redesign-2026-04-26.md)
+> and the [README](../README.md).
 
 ---
 
@@ -350,9 +353,11 @@ Same memory can have different Q-values per experience (e.g., "default", "sales"
                 ↓
         reward.py  (compute session reward → update Q-values)
                 ↓
-        watermark.py  (mark processed obs IDs for idempotency)
+~/.claude/projects/*/*.jsonl   (Claude Code transcripts, rotated ~30d)
                 ↓
-~/.claude/projects/*/*.jsonl   (Claude Code transcripts)
+        raw_store.py  (Layer 1: byte-exact copy → ~/.openexp/raw/, permanent)
+                ↓
+        distill.py  (Layer 2: versioned, re-runnable compression → Qdrant)
                 ↓
         extract_decisions.py  (Opus 4.6 via claude -p → decisions/insights → Qdrant)
 ```
@@ -412,7 +417,8 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | `ingest/session_summary.py` | Parse session markdown → memories |
 | `ingest/reward.py` | Session reward computation + Q-update + L3/L4 |
 | `ingest/retrieval_log.py` | Track recalled memory IDs |
-| `ingest/watermark.py` | Idempotent ingestion tracking |
+| `ingest/raw_store.py` | Layer 1 capture: byte-exact transcript archive |
+| `ingest/distill.py` | Layer 2: versioned re-runnable distillation from raw |
 | `ingest/extract_decisions.py` | Opus 4.6 decision extraction from transcripts |
 
 ### Reward Paths
@@ -447,7 +453,7 @@ Keeps: Write, Edit, Bash with side effects, decisions, valuable tags.
 | Outcomes | `~/.openexp/data/outcomes.jsonl` | JSONL: prediction outcomes |
 | Retrieval log | `~/.openexp/data/session_retrievals.jsonl` | Which memories recalled when |
 | CRM snapshot | `~/.openexp/data/crm_snapshot.json` | Last CRM state for diffing |
-| Ingest watermark | `~/.openexp/data/ingest_watermark.json` | Processed observation IDs |
+| Raw transcripts | `~/.openexp/raw/` | Byte-exact transcript copies (permanent) |
 | Observations (L0) | `~/.openexp/observations/obs-YYYYMMDD-*.jsonl` | Raw tool-use observations |
 | Session summaries | `~/.openexp/sessions/*.md` | Markdown session summaries |
 

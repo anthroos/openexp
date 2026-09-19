@@ -25,38 +25,11 @@
 
 ---
 
-## Quick Start
-
-```bash
-git clone https://github.com/anthroos/openexp.git
-cd openexp
-./setup.sh
-```
-
-That installs the four hooks into Claude Code, brings up Qdrant in Docker, and registers the MCP server.
-
-**Prerequisites:** Python 3.11+, Docker, jq.
-
-No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
-
-To install the seed pack (a real 57-day B2B sales arc, anonymized) and try retrieval against a worked example, see [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — install instructions in its README.
-
----
-
 ## The Question
 
 When you close a deal, ship a feature, or lose a client — *how did it happen*? Which decisions, in what order, against which context, on which hypotheses? Today's AI agents can't answer that. They follow skills and instructions perfectly, but they don't accumulate grounded knowledge about how outcomes actually arrived.
 
 OpenExp captures every human-AI decision as a step in a trajectory, links those steps into coherent journeys, and grades each journey retroactively when reality returns its verdict — a deal closes, a sprint ships, a payment lands. The result is a continuously growing labeled dataset of decisions tied to outcomes, ready to train domain-specific intuition.
-
-## Glossary
-
-A few terms repeat throughout. Settling them up front:
-
-- **Trajectory** — an ordered timeline of decisions a human and AI made together over the life of one closed arc (a deal, a feature, an incident). The unit of data.
-- **Pack** — a published, anonymized trajectory plus its `meta.yaml`. The unit of distribution. Lives in its own GitHub repo.
-- **Skill** — how Claude Code installs and invokes a pack. Naming convention: `openexp:<author>:<slug>`.
-- **`openexp-use`** — the universal applier skill that, given an installed pack, reads its trajectory and answers your situation with a cited day.
 
 ## What It Is Not
 
@@ -76,6 +49,22 @@ Only terminal outcomes get labels:
 Steps are stored raw. Authors annotate their own intent, hypotheses, and decisions ("I believed X at this point", "I chose Y because Z"). They do not label the *signal quality* of individual events — that's what the eventual model learns.
 
 Casual analogy: kids in school don't get annotations on every homework problem. They turn in work, get a grade at the end of the term, and develop intuition over hundreds of grades.
+
+## Quick Start
+
+```bash
+git clone https://github.com/anthroos/openexp.git
+cd openexp
+./setup.sh
+```
+
+That installs the four hooks into Claude Code, makes sure Qdrant is up, and registers the MCP server.
+
+If something is already serving Qdrant on `localhost:6333`, the script uses it and leaves it alone. Otherwise it starts Qdrant in Docker for you.
+
+**Prerequisites:** Python 3.11+, jq, and Qdrant — either [Docker](https://www.docker.com/products/docker-desktop/) (the script handles the container) or a [native Qdrant binary](https://github.com/qdrant/qdrant/releases) you run yourself.
+
+No API key required for core functionality. Embeddings run locally via FastEmbed. An Anthropic API key is optional and only powers the two-prompt pipeline (anonymize + extract experience) when you publish.
 
 ## How It Works
 
@@ -102,19 +91,17 @@ You run both prompts inside your own Claude Code, against your own Qdrant. Nothi
 
 ## Publishing an Experience
 
-A published experience is its **own GitHub repo** (one repo per pack), containing four files:
+A published experience is four files in a UUID-named directory (schema v3, 2026-04-27):
 
 ```
-exp-<slug>/
+experiences/<uuid>/
 ├── meta.yaml                    # facts only: id, outcome label, duration, category tokens, license
 ├── trajectory.anonymized.yaml   # raw ordered timeline of N steps, anonymized
-├── README.md                    # human-readable face for the catalog
+├── README.md                    # human-readable face for the marketplace
 └── SKILL.md                     # Claude entry point — read first when skill is invoked
 ```
 
-Each pack has its own repo so authors own their content (issues, license, versioning), and the engine repo stays focused on the runtime. See [`docs/publishing-a-pack.md`](docs/publishing-a-pack.md) for the author guide.
-
-`meta.yaml` shape (abridged from the seed pack [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot)):
+`meta.yaml` shape (abridged from seed `d49e0997`):
 
 ```yaml
 pack:
@@ -152,8 +139,7 @@ Drop the pack into `~/.claude/skills/openexp:<author>:<slug>/` (rename the direc
 
 ```bash
 # Install the seed pack as a skill
-git clone https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot.git
-ln -s "$PWD/exp-inbound-acquisition-with-free-pilot" \
+cp -r ~/openexp/experiences/d49e0997 \
   ~/.claude/skills/openexp:ivan-pasichnyk:inbound-acquisition-with-free-pilot
 ```
 
@@ -165,7 +151,7 @@ Two layers of identity:
 
 See `docs/skill-architecture.md` for the full naming convention, install flow, and design rationale.
 
-This engine repo is the runtime — it does not bundle packs. Each published pack lives in its own repo (see the [seed pack](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) as the reference shape). A web catalog at `openexp.ai` aggregates published packs; an automated registry index is on the roadmap. A directory of installable experiences is the eventual surface, not a built product today.
+The `experiences/` directory in this repo is the seed of an eventual marketplace. The publication format works; seeds will accumulate. A directory of installable experiences is the eventual surface, not a built product today.
 
 ## MCP Tools
 
@@ -210,14 +196,14 @@ Pack-grounded predictions are how the system learns whether a published experien
 
 **What's deliberately NOT in the schema:** `confidence` (Claude-side confidence is uncalibrated until ≥30 outcome datapoints), `alternative_action_if_no_pack` and `predicted_outcome_alternative` (the same Claude that writes the prediction would invent the counterfactual, biased toward "the pack helped" — real ablation needs a pack-blind run, separate track).
 
-**Backward compatibility.** The legacy schema (`prediction`, `confidence`, `strategic_value`, `memory_ids_used`) is still accepted by both tools. Calling `log_outcome` with `outcome` + `reward` continues to update Q-values for `memory_ids_used` exactly as before. New-path entries are marked `schema_version: 2` in the JSONL row.
+**Backward compatibility.** The legacy schema (`prediction`, `confidence`, `strategic_value`, `memory_ids_used`) is still accepted by both tools and recorded as data. As of 2026-07-03 nothing updates Q-values — the Q engine is fully deleted. New-path entries are marked `schema_version: 2` in the JSONL row.
 
 ## CLI
 
 ```bash
 openexp search -q "stalled enterprise procurement" -n 5
 openexp ingest          # ingest pending transcripts into Qdrant
-openexp stats           # Q-cache + collection stats
+openexp stats           # collection + prediction stats
 ```
 
 ## Configuration
@@ -237,7 +223,7 @@ Environment variables (`.env`):
 
 ## Status
 
-**Pilot. Architecture freeze landed 2026-04-26.** First experience seed published as a standalone repo: [`exp-inbound-acquisition-with-free-pilot`](https://github.com/anthroos/exp-inbound-acquisition-with-free-pilot) — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
+**Pilot. Architecture freeze landed 2026-04-26.** First experience seed published: `experiences/d49e0997/` — a 57-day inbound acquisition that closed at grade 1.0 (author's own assessment), anonymized to category tokens.
 
 Honest about what isn't done:
 - The marketplace UI is just a directory in this repo. No web surface yet.

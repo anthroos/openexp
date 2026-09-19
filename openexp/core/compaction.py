@@ -20,9 +20,7 @@ from qdrant_client.models import (
 
 from .config import (
     QDRANT_HOST, QDRANT_PORT, QDRANT_API_KEY, COLLECTION_NAME,
-    Q_CACHE_PATH,
 )
-from .q_value import QCache
 
 logger = logging.getLogger(__name__)
 
@@ -161,83 +159,27 @@ def compute_merged_content(cluster: List[Dict]) -> str:
     return " | ".join(lines[:5]) + f" [+{len(lines)-5} merged]"
 
 
-def compute_merged_q(
-    cluster: List[Dict],
-    q_cache: QCache,
-    experience: str = "default",
-) -> Dict:
-    """Compute Q-value for merged memory using similarity-weighted average.
-
-    Q_merged = Σ(q_i × sim_i) / Σ(sim_i)
-    where sim_i = cosine similarity to cluster centroid.
-    """
+def compute_cluster_kappa(cluster: List[Dict]) -> float:
+    """Stiffness of a cluster: inverse variance of member vector similarity
+    to the centroid. High kappa = tight cluster."""
     vectors = np.array([m["vector"] for m in cluster])
     centroid = np.mean(vectors, axis=0)
     centroid_norm = np.linalg.norm(centroid)
     if centroid_norm > 0:
         centroid = centroid / centroid_norm
 
-    # Compute per-memory similarity to centroid
     sims = []
     for m in cluster:
         v = np.array(m["vector"])
         norm = np.linalg.norm(v)
-        if norm > 0:
-            sims.append(float(np.dot(centroid, v / norm)))
-        else:
-            sims.append(0.0)
+        sims.append(float(np.dot(centroid, v / norm)) if norm > 0 else 0.0)
 
-    total_sim = sum(sims)
-    if total_sim == 0:
-        total_sim = 1.0
-
-    # Weighted Q-values per layer
-    q_action_sum = 0.0
-    q_hypothesis_sum = 0.0
-    q_fit_sum = 0.0
-    visits_sum = 0
-
-    for mem, sim in zip(cluster, sims):
-        q_data = q_cache.get(mem["id"], experience)
-        if q_data:
-            q_action_sum += q_data.get("q_action", 0.5) * sim
-            q_hypothesis_sum += q_data.get("q_hypothesis", 0.5) * sim
-            q_fit_sum += q_data.get("q_fit", 0.5) * sim
-            visits_sum += q_data.get("q_visits", 0)
-        else:
-            q_action_sum += 0.5 * sim
-            q_hypothesis_sum += 0.5 * sim
-            q_fit_sum += 0.5 * sim
-
-    q_action = q_action_sum / total_sim
-    q_hypothesis = q_hypothesis_sum / total_sim
-    q_fit = q_fit_sum / total_sim
-    q_combined = 0.5 * q_action + 0.2 * q_hypothesis + 0.3 * q_fit
-
-    # κ (stiffness) = inverse variance of rewards
-    rewards = []
-    for mem in cluster:
-        q_data = q_cache.get(mem["id"], experience)
-        if q_data and "last_reward" in q_data:
-            rewards.append(q_data["last_reward"])
-    kappa = 1.0 / max(np.var(rewards), 0.01) if rewards else 1.0
-
-    return {
-        "q_value": round(q_combined, 4),
-        "q_action": round(q_action, 4),
-        "q_hypothesis": round(q_hypothesis, 4),
-        "q_fit": round(q_fit, 4),
-        "q_visits": visits_sum,
-        "kappa": round(kappa, 2),
-        "q_updated_at": datetime.now(timezone.utc).isoformat(),
-        "last_layer_updated": "compaction",
-    }
+    return round(1.0 / max(float(np.var(sims)), 0.01), 2) if sims else 1.0
 
 
 def compact_cluster(
     cluster: List[Dict],
     qc: QdrantClient,
-    q_cache: QCache,
     experience: str = "default",
     dry_run: bool = False,
 ) -> Optional[Dict]:
@@ -249,21 +191,18 @@ def compact_cluster(
     from .lifecycle import MemoryLifecycle
 
     merged_content = compute_merged_content(cluster)
-    merged_q = compute_merged_q(cluster, q_cache, experience)
+    kappa = compute_cluster_kappa(cluster)
     original_ids = [m["id"] for m in cluster]
 
-    # Inherit metadata from the memory with highest Q-value
-    best_mem = max(cluster, key=lambda m: (
-        q_cache.get(m["id"], experience) or {}
-    ).get("q_value", 0.0))
+    # Inherit metadata from the highest-importance member
+    best_mem = max(cluster, key=lambda m: m["payload"].get("importance", 0.0))
     best_payload = best_mem["payload"]
 
     result = {
         "merged_content": merged_content,
         "original_count": len(cluster),
         "original_ids": original_ids,
-        "q_value": merged_q["q_value"],
-        "kappa": merged_q["kappa"],
+        "kappa": kappa,
     }
 
     if dry_run:
@@ -289,7 +228,7 @@ def compact_cluster(
             "source": "compaction",
             "merged_from": original_ids,
             "merge_count": len(original_ids),
-            "kappa": merged_q["kappa"],
+            "kappa": kappa,
             "tags": best_payload.get("metadata", {}).get("tags", []),
             "client_id": best_payload.get("metadata", {}).get("client_id"),
         },
@@ -302,9 +241,6 @@ def compact_cluster(
         points=[PointStruct(id=new_id, vector=vector, payload=payload)],
     )
 
-    # Set Q-values for merged memory
-    q_cache.set(new_id, merged_q, experience)
-
     # Mark originals as merged
     lifecycle = MemoryLifecycle()
     for mem in cluster:
@@ -314,8 +250,8 @@ def compact_cluster(
 
     result["new_id"] = new_id
     logger.info(
-        "Compacted %d memories into %s (Q=%.3f, κ=%.1f)",
-        len(cluster), new_id[:8], merged_q["q_value"], merged_q["kappa"],
+        "Compacted %d memories into %s (κ=%.1f)",
+        len(cluster), new_id[:8], kappa,
     )
     return result
 
@@ -337,8 +273,6 @@ def compact_memories(
     4. Return summary
     """
     qc = _get_qdrant()
-    q_cache = QCache()
-    q_cache.load(Q_CACHE_PATH)
 
     logger.info("Fetching active memories...")
     memories = fetch_active_memories(qc, client_id=client_id, project=project)
@@ -353,12 +287,9 @@ def compact_memories(
 
     results = []
     for cluster in clusters[:max_clusters]:
-        result = compact_cluster(cluster, qc, q_cache, experience, dry_run)
+        result = compact_cluster(cluster, qc, experience, dry_run)
         if result:
             results.append(result)
-
-    if not dry_run and results:
-        q_cache.save(Q_CACHE_PATH)
 
     total_merged = sum(r["original_count"] for r in results)
     return {

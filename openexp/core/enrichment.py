@@ -31,13 +31,20 @@ def _enrich_with_anthropic(content: str) -> Dict[str, Any]:
     """Enrich using Anthropic Claude."""
     global _anthropic_client
     import anthropic
-    from .config import ANTHROPIC_API_KEY, ENRICHMENT_MODEL
+    from .config import ANTHROPIC_API_KEY, ENRICHMENT_MODEL, ENRICHMENT_TIMEOUT
 
     if not ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY not configured")
 
     if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        # Short timeout + single retry: enrichment is best-effort on the write
+        # path. A slow/rate-limited call must fail fast into the fallback rather
+        # than block the MCP request until the client reports -32603.
+        _anthropic_client = anthropic.Anthropic(
+            api_key=ANTHROPIC_API_KEY,
+            timeout=ENRICHMENT_TIMEOUT,
+            max_retries=1,
+        )
     client = _anthropic_client
     prompt = _build_enrichment_prompt(content)
 

@@ -46,12 +46,7 @@ export OPENEXP_EXPERIENCE="$EXPERIENCE"
 "$PYTHON" -c "
 import json, sys, os
 sys.path.insert(0, '.')
-from openexp.core.config import Q_CACHE_PATH
-from openexp.core.q_value import QCache
 from openexp.core import direct_search
-
-q = QCache()
-q.load(Q_CACHE_PATH)
 
 query = sys.stdin.read().strip()
 if not query:
@@ -59,7 +54,7 @@ if not query:
 
 tmpdir = os.environ['OPENEXP_TMPDIR']
 experience = os.environ.get('OPENEXP_EXPERIENCE', 'default')
-context = direct_search.search_memories(query=query, limit=10, q_cache=q, experience=experience)
+context = direct_search.search_memories(query=query, limit=10, experience=experience)
 json.dump({'context': context}, open(os.path.join(tmpdir, 'results.json'), 'w'), default=str)
 " <<< "$QUERY" 2>/dev/null
 
@@ -76,7 +71,7 @@ ALL_SCORES=""
 
 if jq -e '.context.results | length > 0' "$RESULTS_FILE" >/dev/null 2>&1; then
   CONTEXT_TEXT=$(jq -r '.context.results[] |
-    "[sim=\(.hybrid_score // .score | . * 100 | floor / 100)] [q=\(.q_value // 0 | . * 100 | floor / 100)] \(.memory[:200])"' "$RESULTS_FILE")
+    "[sim=\(.hybrid_score // .score | . * 100 | floor / 100)] \(.memory[:200])"' "$RESULTS_FILE")
   ALL_IDS=$(jq -r '[.context.results[].id] | join(",")' "$RESULTS_FILE")
   ALL_SCORES=$(jq -r '[.context.results[].score] | map(tostring) | join(",")' "$RESULTS_FILE")
 fi
@@ -102,6 +97,6 @@ jq -n \
   '{
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      additionalContext: ("# OpenExp Memory (Q-value ranked)\nQuery: " + $project + " | " + $day + " " + $today + "\n\n## Relevant Context\n" + $context + "\n")
+      additionalContext: ("# OpenExp Memory\nQuery: " + $project + " | " + $day + " " + $today + "\n\n## Relevant Context\n" + $context + "\n")
     }
   }'

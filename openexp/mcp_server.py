@@ -1,12 +1,12 @@
-"""OpenExp MCP Server — exposes Q-learning memory to Claude Code via STDIO.
+"""OpenExp MCP Server — exposes the memory engine to Claude Code via STDIO.
 
 SECURITY: This server MUST only run over STDIO transport (stdin/stdout).
 If HTTP transport is ever added, authentication (e.g., bearer tokens, mTLS)
 MUST be implemented before exposing the server on any network interface.
 Running over HTTP without authentication would allow unauthenticated access
-to the memory store and Q-value system.
+to the memory store.
 """
-import atexit
+
 import json
 import sys
 import logging
@@ -15,59 +15,45 @@ import uuid
 logger = logging.getLogger(__name__)
 
 # Lazy-initialized globals (set in _init_server)
-q_cache = None
-q_updater = None
 reward_tracker = None
 direct_search = None
 active_experience = None
 SESSION_ID = None
-DELTAS_DIR = None
-Q_CACHE_PATH = None
 _initialized = False
 
 
 def _init_server():
     """Initialize server state. Called once from main(), not at import time."""
-    global q_cache, q_updater, reward_tracker, direct_search, active_experience
-    global SESSION_ID, DELTAS_DIR, Q_CACHE_PATH, _initialized
+    global reward_tracker, direct_search, active_experience
+    global SESSION_ID, _initialized
 
     if _initialized:
         return
 
-    from .core.config import DATA_DIR, Q_CACHE_PATH as _qcp
-    from .core.q_value import QCache, QValueUpdater
+    from .core.config import DATA_DIR
     from .core import direct_search as _ds
     from .core.experience import get_active_experience
     from .reward_tracker import RewardTracker
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    Q_CACHE_PATH = _qcp
     direct_search = _ds
     SESSION_ID = uuid.uuid4().hex[:12]
-    DELTAS_DIR = DATA_DIR / "deltas"
 
     active_experience = get_active_experience()
     logger.info("Active experience: %s", active_experience.name)
 
-    q_cache = QCache()
-    q_cache.load_and_merge(Q_CACHE_PATH, DELTAS_DIR)
-
-    q_updater = QValueUpdater(cache=q_cache)
     reward_tracker = RewardTracker(
         data_dir=DATA_DIR,
-        q_updater=q_updater,
-        q_cache=q_cache,
         experience=active_experience.name,
     )
 
-    atexit.register(lambda: q_cache.save_delta(DELTAS_DIR, SESSION_ID))
     _initialized = True
 
 
 TOOLS = [
     {
         "name": "search_memory",
-        "description": "Search memories with FastEmbed + Qdrant, hybrid BM25 scoring, lifecycle filtering, and Q-value reranking",
+        "description": "Search memories with FastEmbed + Qdrant: hybrid semantic + BM25 + recency + importance scoring with lifecycle filtering",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -87,7 +73,7 @@ TOOLS = [
     },
     {
         "name": "add_memory",
-        "description": "Store a new memory with FastEmbed embedding and Q-value tracking",
+        "description": "Store a new memory with FastEmbed embedding and LLM enrichment",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -129,7 +115,7 @@ TOOLS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "default": [],
-                    "description": "Memory IDs that were retrieved for this prediction (for legacy Q-value updates on log_outcome)",
+                    "description": "Memory IDs that were retrieved for this prediction (recorded as data)",
                 },
                 "client_id": {"type": "string", "description": "[deprecated alias for case_id, accepted for backward compat]"},
             },
@@ -141,10 +127,9 @@ TOOLS = [
     {
         "name": "log_outcome",
         "description": (
-            "Resolve a prediction with observed facts. New path: provide actual_signal "
-            "and days_to_resolve — interpretation-free record of what happened. Legacy "
-            "path: provide outcome + reward to keep updating Q-values for memory_ids_used "
-            "from older predictions. The two paths can coexist."
+            "Resolve a prediction with observed facts: provide actual_signal and "
+            "days_to_resolve — an interpretation-free record of what happened. "
+            "Legacy outcome/reward fields are accepted and recorded as data."
         ),
         "inputSchema": {
             "type": "object",
@@ -155,7 +140,7 @@ TOOLS = [
                 "notes": {"type": "string", "description": "Optional free-text context (e.g. unexpected events)"},
 
                 "outcome": {"type": "string", "description": "[deprecated alias for actual_signal — accepted for backward compat]"},
-                "reward": {"type": "number", "description": "[deprecated — only used on the legacy Q-update path. Omit on the new path.]"},
+                "reward": {"type": "number", "description": "[deprecated — recorded as data, updates nothing]"},
                 "cause_category": {
                     "type": "string",
                     "description": "[deprecated, accepted for backward compat]",
@@ -230,7 +215,6 @@ def handle_request(request: dict) -> dict:
                 source=args.get("source"),
                 date_from=args.get("date_from"),
                 date_to=args.get("date_to"),
-                q_cache=q_cache,
                 experience=exp_name,
             )
             return {"content": [{"type": "text", "text": json.dumps(result, indent=2, default=str)}]}
@@ -247,7 +231,6 @@ def handle_request(request: dict) -> dict:
                 agent_id=args.get("agent", "main"),
                 memory_type=args.get("type", "fact"),
                 metadata=meta,
-                q_cache=q_cache,
                 experience=exp_name,
             )
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
@@ -305,19 +288,15 @@ def handle_request(request: dict) -> dict:
                     "Provide either `actual_signal` (new path) or `outcome` (legacy).",
                 )
 
-            has_legacy_reward = "reward" in args
-
             result = reward_tracker.log_outcome(
                 prediction_id=args["prediction_id"],
                 actual_signal=actual_signal[:MAX_CONTENT_LENGTH],
                 days_to_resolve=args.get("days_to_resolve"),
                 notes=args.get("notes"),
-                # Legacy Q-update path
-                reward=_clamp(args["reward"], -1.0, 1.0) if has_legacy_reward else None,
+                # Legacy fields — recorded as-is; Q-updates were removed 2026-07-03
+                reward=_clamp(args["reward"], -1.0, 1.0) if "reward" in args else None,
                 cause_category=args.get("cause_category"),
             )
-            if has_legacy_reward:
-                q_cache.save_delta(DELTAS_DIR, SESSION_ID)
             return {"content": [{"type": "text", "text": json.dumps(result, default=str)}]}
 
         elif tool_name == "memory_stats":
@@ -372,7 +351,6 @@ def handle_request(request: dict) -> dict:
 
             stats = {
                 "qdrant": qdrant_stats,
-                "q_cache_size": len(q_cache),
                 "active_experience": exp_name,
                 "pending_predictions": len(reward_tracker.get_pending_predictions()),
                 "reward_stats": reward_tracker.get_prediction_stats(),

@@ -1,9 +1,14 @@
 """OpenExp Visualization — data export for self-contained HTML dashboard.
 
-Reads Q-cache, observations, sessions, predictions/outcomes and produces
-a sanitized JSON dict that gets embedded in the viz.html template.
+Reads the historical Q-cache snapshot, observations, sessions,
+predictions/outcomes and produces a sanitized JSON dict that gets embedded
+in the viz.html template.
 
 No raw memory text or file paths are included — aggregate stats only.
+
+Legacy note: the Q-learning engine was removed on 2026-07-03. This module
+keeps a read-only shim over the frozen q_cache.json so historical replay
+dashboards still render.
 """
 import json
 import re
@@ -11,6 +16,35 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
+
+# Frozen constants of the removed Q engine — display only.
+DEFAULT_Q_CONFIG = {
+    "alpha": 0.25,
+    "q_init": 0.0,
+    "q_floor": -0.5,
+    "q_ceiling": 1.0,
+    "q_action_weight": 0.5,
+    "q_hypothesis_weight": 0.2,
+    "q_fit_weight": 0.3,
+}
+
+
+class QCache:
+    """Read-only view of the frozen q_cache.json snapshot ({mem_id: {experience: q_data}})."""
+
+    def __init__(self):
+        self._cache = {}
+
+    def load(self, path):
+        p = Path(path)
+        if not p.exists():
+            return
+        try:
+            data = json.loads(p.read_text())
+            if isinstance(data, dict):
+                self._cache = data
+        except (json.JSONDecodeError, OSError):
+            self._cache = {}
 
 
 def _histogram(values, bin_start=-0.5, bin_end=1.0, num_bins=15):
@@ -93,7 +127,6 @@ def export_viz_data(no_qdrant=False):
     from .core.config import (
         DATA_DIR, Q_CACHE_PATH, OBSERVATIONS_DIR, SESSIONS_DIR,
     )
-    from .core.q_value import QCache, DEFAULT_Q_CONFIG
     from .core.hybrid_search import DEFAULT_HYBRID_WEIGHTS, STATUS_WEIGHTS
 
     data = {}
@@ -979,7 +1012,6 @@ def generate_demo_replay():
 
     Rich conversation entries include content_type, flow states, and activity log.
     """
-    from .core.q_value import DEFAULT_Q_CONFIG
 
     now = datetime.now().isoformat()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -1370,7 +1402,6 @@ def export_replay_data(session_id):
         dict with replay timeline, retrieval snapshots, and Q-value changes.
     """
     from .core.config import DATA_DIR, Q_CACHE_PATH, OBSERVATIONS_DIR, SESSIONS_DIR
-    from .core.q_value import QCache, DEFAULT_Q_CONFIG
 
     # --- Load Q-cache ---
     q_cache = QCache()

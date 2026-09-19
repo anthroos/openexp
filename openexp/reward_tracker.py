@@ -1,7 +1,8 @@
-"""Reward Tracker — tracks agent predictions and their outcomes.
+"""Reward Tracker — the prediction/outcome journal.
 
-When outcomes resolve, updates Q-values for memories that were used
-in the prediction. This closes the learning loop.
+Records predictions and their observed outcomes as append-only JSONL.
+This is the corpus the experience thesis is measured against; it does
+not update any ranking signal (Q-updates were removed 2026-07-03).
 """
 import json
 import logging
@@ -12,26 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .core.explanation import generate_reward_explanation, _fetch_memory_contents
-from .core.q_value import QValueUpdater, QCache, compute_layer_rewards
-from .core.reward_log import generate_reward_id, log_reward_event
-
 logger = logging.getLogger(__name__)
-
-def _build_prediction_reward_context(
-    prediction: str, outcome: str, reward: float, cause_category: str | None = None,
-) -> str:
-    """Build a human-readable reward context for a prediction→outcome resolution.
-
-    Format: "Pred +0.80: 'prediction snippet' -> 'outcome snippet'"
-    """
-    sign = "+" if reward >= 0 else ""
-    pred_snippet = prediction[:40].replace("'", "")
-    out_snippet = outcome[:40].replace("'", "")
-    ctx = f"Pred {sign}{reward:.2f}: '{pred_snippet}' -> '{out_snippet}'"
-    if cause_category:
-        ctx += f" [{cause_category}]"
-    return ctx
 
 
 CAUSE_CATEGORIES = {
@@ -79,13 +61,11 @@ def _load_jsonl(path: Path) -> List[dict]:
 
 
 class RewardTracker:
-    """Tracks predictions -> outcomes -> Q-value updates."""
+    """Append-only journal of predictions and their observed outcomes."""
 
     def __init__(
         self,
         data_dir: Path,
-        q_updater: Optional[QValueUpdater] = None,
-        q_cache: Optional[QCache] = None,
         experience: str = "default",
     ):
         self.data_dir = Path(data_dir)
@@ -94,9 +74,6 @@ class RewardTracker:
         self.predictions_file = self.data_dir / "predictions.jsonl"
         self.outcomes_file = self.data_dir / "outcomes.jsonl"
         self.experience = experience
-
-        self.q_cache = q_cache or QCache()
-        self.q_updater = q_updater or QValueUpdater(cache=self.q_cache)
 
         self._predictions: List[dict] = _load_jsonl(self.predictions_file)
         self._lock = threading.Lock()
@@ -194,13 +171,11 @@ class RewardTracker:
         source: str = "human",
         cause_category: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Log an outcome. Two paths:
+        """Log an outcome (interpretation-free record).
 
-        - New (interpretation-free): provide actual_signal + days_to_resolve. The
-          observation is recorded; no Q-update happens. Reward derivation is for
-          aggregate analysis later, not per-call.
-        - Legacy: provide outcome + reward to keep updating Q-values for
-          memory_ids_used from older predictions.
+        Provide actual_signal + days_to_resolve (new path) or outcome (legacy
+        alias). A supplied legacy `reward` is recorded as data for aggregate
+        analysis but updates nothing — Q-updates were removed 2026-07-03.
         """
         # Resolve which path we're on. If actual_signal is missing, fall back to legacy `outcome`.
         observed_signal = actual_signal if actual_signal is not None else outcome
@@ -245,96 +220,22 @@ class RewardTracker:
 
             pred["status"] = "resolved"
             pred["resolved_at"] = _now_iso()
-            memory_ids = list(pred.get("memory_ids_used", []))
             self._rewrite_predictions_file()
 
-        # New path stops here: no Q-update, no cold-storage reward log.
-        if reward is None:
-            logger.info(
-                "Outcome for %s recorded (interpretation-free): %s",
-                prediction_id, observed_signal[:80],
-            )
-            return {
-                "prediction_id": prediction_id,
-                "actual_signal": observed_signal,
-                "days_to_resolve": days_to_resolve,
-                "memories_updated": 0,
-                "schema_version": 2,
-            }
-
-        # Legacy path — keep Q-update behavior for older predictions
-        reward_ctx = _build_prediction_reward_context(
-            pred.get("prediction") or pred.get("applied_action") or "",
-            observed_signal, reward, cause_category,
-        )
-
-        # L3 cold storage
-        rwd_id = generate_reward_id()
-        cold_context = {
-            "prediction_id": prediction_id,
-            "prediction": pred.get("prediction") or pred.get("applied_action", ""),
-            "outcome": observed_signal,
-            "confidence": pred.get("confidence"),
-            "strategic_value": pred.get("strategic_value"),
-            "cause_category": cause_category,
-            "source": source,
-            "client_id": pred.get("client_id") or pred.get("case_id"),
-        }
-
-        # L4: read first memory's Q before update
-        q_before = None
-        if memory_ids:
-            first_q_data = self.q_cache.get(memory_ids[0], self.experience)
-            q_before = first_q_data.get("q_value", 0.0) if first_q_data else None
-
-        updated_q = {}
-        layer_rewards = compute_layer_rewards(reward)
-        for mem_id in memory_ids:
-            updated_q[mem_id] = self.q_updater.update_all_layers(
-                mem_id, layer_rewards, experience=self.experience,
-                reward_context=reward_ctx, reward_id=rwd_id,
-            )
-
-        # L4: read first memory's Q after update
-        q_after = None
-        if memory_ids:
-            first_q_after = self.q_cache.get(memory_ids[0], self.experience)
-            q_after = first_q_after.get("q_value", 0.0) if first_q_after else None
-
-        # L4: generate explanation with q_before/q_after
-        explanation = generate_reward_explanation(
-            reward_type="prediction",
-            reward=reward,
-            context=cold_context,
-            memory_contents=_fetch_memory_contents(memory_ids[:5]),
-            q_before=q_before,
-            q_after=q_after,
-            experience=self.experience,
-        )
-
-        log_reward_event(
-            reward_id=rwd_id,
-            reward_type="prediction",
-            reward=reward,
-            memory_ids=memory_ids,
-            context=cold_context,
-            experience=self.experience,
-            explanation=explanation,
-        )
-
         logger.info(
-            "Outcome for %s: reward=%.2f, updated %d memories (reward_id=%s)",
-            prediction_id, reward, len(updated_q), rwd_id,
+            "Outcome for %s recorded: %s", prediction_id, observed_signal[:80],
         )
-
-        return {
+        result = {
             "prediction_id": prediction_id,
-            "reward": reward,
-            "reward_id": rwd_id,
-            "cause_category": cause_category,
-            "memories_updated": len(updated_q),
-            "q_updates": {k: v.get("q_value", 0) for k, v in updated_q.items()},
+            "actual_signal": observed_signal,
+            "days_to_resolve": days_to_resolve,
+            "schema_version": 2,
         }
+        if reward is not None:
+            result["reward"] = reward
+        if cause_category is not None:
+            result["cause_category"] = cause_category
+        return result
 
     def get_pending_predictions(self, client_id: Optional[str] = None) -> List[dict]:
         """Get all unresolved predictions."""
@@ -357,9 +258,12 @@ class RewardTracker:
         if not outcomes:
             return {"total": total, "resolved": resolved, "pending": pending}
 
-        positive = sum(1 for o in outcomes if o["reward"] > 0)
-        negative = sum(1 for o in outcomes if o["reward"] < 0)
-        avg_reward = sum(o["reward"] for o in outcomes) / len(outcomes)
+        # New-path outcomes (schema_version 2) are interpretation-free and carry
+        # no reward key — reward stats only cover legacy rewarded outcomes.
+        rewarded = [o for o in outcomes if isinstance(o.get("reward"), (int, float))]
+        positive = sum(1 for o in rewarded if o["reward"] > 0)
+        negative = sum(1 for o in rewarded if o["reward"] < 0)
+        avg_reward = round(sum(o["reward"] for o in rewarded) / len(rewarded), 3) if rewarded else None
 
         return {
             "total": total,
@@ -367,7 +271,8 @@ class RewardTracker:
             "pending": pending,
             "positive_outcomes": positive,
             "negative_outcomes": negative,
-            "avg_reward": round(avg_reward, 3),
+            "observation_only_outcomes": len(outcomes) - len(rewarded),
+            "avg_reward": avg_reward,
             "accuracy": round(positive / resolved, 3) if resolved > 0 else 0,
         }
 

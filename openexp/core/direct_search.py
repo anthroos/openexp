@@ -22,7 +22,6 @@ from .config import (
     EMBEDDING_MODEL,
 )
 from .v7_extensions import apply_lifecycle_filter, apply_hybrid_scoring
-from .q_value import QCache, DEFAULT_Q_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +65,6 @@ def search_memories(
     exclude_type: Optional[str] = None,
     client_id: Optional[str] = None,
     include_deleted: bool = False,
-    q_cache: Optional[QCache] = None,
     experience: str = "default",
     role: Optional[str] = None,
     session_id: Optional[str] = None,
@@ -79,7 +77,7 @@ def search_memories(
     1. Embed query with FastEmbed
     2. Search Qdrant with filters
     3. Apply lifecycle filter
-    4. Apply hybrid scoring (BM25 + Q-value reranking)
+    4. Apply hybrid scoring (semantic + BM25 + recency + importance)
     5. Return results
 
     Filters:
@@ -168,17 +166,6 @@ def search_memories(
             "metadata": payload.get("metadata", {}),
         }
 
-        q_fallback = DEFAULT_Q_CONFIG["q_init"]
-        if q_cache:
-            q_data = q_cache.get(str(point.id), experience)
-            if q_data:
-                record["q_value"] = q_data.get("q_value", q_fallback)
-                record["q_data"] = q_data
-            else:
-                record["q_value"] = q_fallback
-        else:
-            record["q_value"] = payload.get("q_value", q_fallback)
-
         results.append(record)
 
     results = apply_lifecycle_filter(results, include_deleted=include_deleted)
@@ -187,7 +174,7 @@ def search_memories(
     return {
         "results": results,
         "count": len(results),
-        "scoring": "hybrid+q_value",
+        "scoring": "hybrid",
     }
 
 
@@ -197,7 +184,6 @@ def add_memory(
     agent_id: str = "main",
     memory_type: str = "fact",
     metadata: Optional[dict] = None,
-    q_cache: Optional[QCache] = None,
     experience: str = "default",
 ) -> Dict[str, Any]:
     """Add a memory directly to Qdrant with FastEmbed embedding.
@@ -205,7 +191,6 @@ def add_memory(
     1. Embed with FastEmbed
     2. Enrich (try LLM, fallback to defaults)
     3. Upsert to Qdrant
-    4. Update Q-cache with initial Q=0.0
     """
     try:
         from .enrichment import enrich_memory, compute_validity_end
@@ -271,16 +256,6 @@ def add_memory(
         points=[PointStruct(id=point_id, vector=vector, payload=payload)],
     )
 
-    if q_cache:
-        q_init = DEFAULT_Q_CONFIG["q_init"]
-        q_cache.set(point_id, {
-            "q_value": q_init,
-            "q_action": q_init,
-            "q_hypothesis": q_init,
-            "q_fit": q_init,
-            "q_visits": 0,
-        }, experience=experience)
-
     return {
         "status": "ok",
         "id": point_id,
@@ -293,7 +268,6 @@ def add_experience(
     experience_label: dict,
     thread_id: int,
     thread_name: str,
-    q_cache: Optional[QCache] = None,
     experience: str = "default",
 ) -> Dict[str, Any]:
     """Store a structured experience label in Qdrant.
@@ -366,16 +340,6 @@ def add_experience(
         collection_name=COLLECTION_NAME,
         points=[PointStruct(id=point_id, vector=vector, payload=payload)],
     )
-
-    if q_cache:
-        q_init = DEFAULT_Q_CONFIG["q_init"]
-        q_cache.set(point_id, {
-            "q_value": q_init,
-            "q_action": q_init,
-            "q_hypothesis": q_init,
-            "q_fit": q_init,
-            "q_visits": 0,
-        }, experience=experience)
 
     return {
         "status": "ok",

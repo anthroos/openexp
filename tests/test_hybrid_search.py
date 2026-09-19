@@ -68,7 +68,7 @@ def test_default_weights_sum_to_1():
     assert abs(total - 1.0) < 1e-9, f"Weights sum to {total}, expected 1.0"
 
 
-def test_q_value_weight_is_active():
-    """Q-value weight enabled at 10% for experience labeling."""
+def test_q_value_not_in_weights():
+    """Q-value was dropped from the ranking formula on 2026-07-03 (mean Q 0.006 = dead weight)."""
     from openexp.core.hybrid_search import DEFAULT_HYBRID_WEIGHTS
-    assert DEFAULT_HYBRID_WEIGHTS["w_q_value"] == 0.10
+    assert "w_q_value" not in DEFAULT_HYBRID_WEIGHTS

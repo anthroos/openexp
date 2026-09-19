@@ -1,5 +1,4 @@
-"""OpenExp core — Q-learning memory engine."""
-from .q_value import QCache, QValueUpdater, QValueScorer
+"""OpenExp core — hybrid-retrieval memory engine."""
 
 
 def search_memories(*args, **kwargs):

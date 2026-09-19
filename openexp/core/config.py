@@ -17,7 +17,8 @@ DATA_DIR = Path(os.getenv("OPENEXP_DATA_DIR", os.path.expanduser("~/.openexp/dat
 EMBEDDING_MODEL = os.getenv("OPENEXP_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 EMBEDDING_DIM = int(os.getenv("OPENEXP_EMBEDDING_DIM", "384"))
 
-# Data file paths
+# Frozen snapshot of the removed Q engine (2026-07-03) — read only by viz
+# for historical replay dashboards. Nothing writes it anymore.
 Q_CACHE_PATH = DATA_DIR / "q_cache.json"
 
 # Qdrant
@@ -29,6 +30,11 @@ COLLECTION_NAME = os.getenv("OPENEXP_COLLECTION", "openexp_memories")
 # API keys (optional — only needed for enrichment/reflection)
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 
+# Raw transcript store — permanent byte-exact copies of Claude Code transcripts.
+# Claude Code rotates ~/.claude/projects after ~30 days; this store is the
+# source of truth that distill re-reads.
+RAW_DIR = Path(os.getenv("OPENEXP_RAW_DIR", os.path.expanduser("~/.openexp/raw")))
+
 # Ingest — observation pipeline
 OBSERVATIONS_DIR = Path(os.getenv(
     "OPENEXP_OBSERVATIONS_DIR",
@@ -38,11 +44,14 @@ SESSIONS_DIR = Path(os.getenv(
     "OPENEXP_SESSIONS_DIR",
     os.path.expanduser("~/.openexp/sessions")
 ))
-INGEST_WATERMARK_PATH = DATA_DIR / "ingest_watermark.json"
 INGEST_BATCH_SIZE = int(os.getenv("OPENEXP_INGEST_BATCH_SIZE", "50"))
 
 # Enrichment model (optional — requires ANTHROPIC_API_KEY)
 ENRICHMENT_MODEL = os.getenv("OPENEXP_ENRICHMENT_MODEL", "claude-haiku-4-5-20251001")
+# Per-request timeout (seconds) for the enrichment LLM call. Kept short so a slow
+# or rate-limited call falls back to defaults fast instead of blocking the MCP
+# request until it times out as a generic -32603 error.
+ENRICHMENT_TIMEOUT = float(os.getenv("OPENEXP_ENRICHMENT_TIMEOUT", "8.0"))
 
 # L4: LLM-generated reward explanations (default: Opus for deep understanding)
 EXPLANATION_MODEL = os.getenv("OPENEXP_EXPLANATION_MODEL", "claude-opus-4-6")

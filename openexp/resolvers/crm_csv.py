@@ -75,7 +75,7 @@ def _match_transition(
 def _extract_core(id_str: str) -> str:
     """Extract core identifier by stripping type prefix.
 
-    'cli-dt-001' → 'dt-001', 'comp-squad' → 'squad', 'lead-squad-001' → 'squad-001'
+    'cli-dt-001' → 'dt-001', 'comp-acme' → 'acme', 'lead-acme-001' → 'acme-001'
     """
     parts = id_str.split("-", 1)
     if len(parts) == 2 and parts[0] in ("cli", "comp", "lead", "deal"):
@@ -90,7 +90,7 @@ def client_matches(pred_client: str, crm_client: str) -> bool:
     Minimum 2 chars in core to avoid false positives.
 
     Examples:
-        comp-squad == comp-squad (exact)
+        comp-acme == comp-acme (exact)
         cli-dt-001 matches comp-dt-001 (core: dt-001)
         comp-dt matches cli-dt (core: dt)
         comp-a-1 does NOT match cli-a-2 (cores: a-1 vs a-2)

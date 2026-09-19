@@ -84,34 +84,33 @@ print(d.get('experience',''))
   export OPENEXP_SESSION_ID="$SESSION_ID"
   export OPENEXP_EXPERIENCE="$EXPERIENCE"
 
-  # Step 1: Extract decisions
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: extracting decisions from $TRANSCRIPT_FILE" >> "$INGEST_LOG"
+  # Step 0: Archive raw transcript AS-IS into ~/.openexp/raw (capture never thinks).
+  # Claude Code rotates transcripts (~30 days); the raw store is permanent.
+  # Steps 1-2 below read from the archived copy, not the live transcript.
+  RAW_COPY=$("$PYTHON" -c "
+import sys, os
+sys.path.insert(0, '.')
+from pathlib import Path
+from openexp.ingest.raw_store import archive_transcript
+p = archive_transcript(Path(os.environ['OPENEXP_TRANSCRIPT_FILE']), os.environ['OPENEXP_SESSION_ID'])
+print(p or '')
+" 2>>"$INGEST_LOG")
+  if [ -z "$RAW_COPY" ] || [ ! -f "$RAW_COPY" ]; then
+    # Distill reads only from the raw store — no raw copy, no distill.
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: raw archive FAILED for $SESSION_SHORT, skipping distill" >> "$INGEST_LOG"
+    exit 0
+  fi
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: archived raw -> $RAW_COPY" >> "$INGEST_LOG"
+
+  # Step 1: Distill (extract decisions + ingest transcript, versioned, from raw)
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: distilling session $SESSION_SHORT" >> "$INGEST_LOG"
   "$PYTHON" -c "
 import sys, json, os, logging
 sys.path.insert(0, '.')
 logging.basicConfig(level=logging.INFO)
-from pathlib import Path
-from openexp.ingest.extract_decisions import extract_and_store
+from openexp.ingest.distill import distill_session
 
-result = extract_and_store(
-    transcript_path=Path(os.environ['OPENEXP_TRANSCRIPT_FILE']),
-    session_id=os.environ['OPENEXP_SESSION_ID'],
-    experience=os.environ['OPENEXP_EXPERIENCE'],
-)
-print(json.dumps(result, default=str))
-" >> "$INGEST_LOG" 2>&1
-
-  # Step 2: Ingest full transcript (idempotent — skips if already ingested)
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SessionEnd: ingesting transcript for $SESSION_SHORT" >> "$INGEST_LOG"
-  "$PYTHON" -c "
-import sys, json, os, logging
-sys.path.insert(0, '.')
-logging.basicConfig(level=logging.INFO)
-from pathlib import Path
-from openexp.ingest.transcript import ingest_transcript
-
-result = ingest_transcript(
-    transcript_path=Path(os.environ['OPENEXP_TRANSCRIPT_FILE']),
+result = distill_session(
     session_id=os.environ['OPENEXP_SESSION_ID'],
     experience=os.environ['OPENEXP_EXPERIENCE'],
 )

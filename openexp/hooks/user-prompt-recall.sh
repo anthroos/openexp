@@ -45,13 +45,8 @@ export OPENEXP_SESSION_ID="$SESSION_ID"
 "$PYTHON" -c "
 import json, sys, os
 sys.path.insert(0, '.')
-from openexp.core.config import Q_CACHE_PATH
-from openexp.core.q_value import QCache
 from openexp.core import direct_search
 from openexp.core.experience import detect_experience_from_prompt, save_session_experience
-
-q = QCache()
-q.load(Q_CACHE_PATH)
 
 query = sys.stdin.read().strip()
 if not query:
@@ -64,7 +59,7 @@ if experience != 'default' and session_id and session_id != 'unknown':
     save_session_experience(session_id, experience)
 
 tmpfile = os.environ['OPENEXP_TMPFILE']
-context = direct_search.search_memories(query=query, limit=5, q_cache=q, experience=experience)
+context = direct_search.search_memories(query=query, limit=5, experience=experience)
 json.dump({'context': context, 'experience': experience}, open(tmpfile, 'w'), default=str)
 " <<< "$QUERY" 2>/dev/null
 
@@ -80,7 +75,7 @@ ALL_SCORES=""
 CONTEXT_TEXT=""
 if jq -e '.context.results | length > 0' "$TMPFILE" >/dev/null 2>&1; then
   CONTEXT_TEXT=$(jq -r '.context.results[] |
-    "[q=\(.q_value // 0.5 | . * 100 | floor / 100)] \(.memory[:250])"' "$TMPFILE")
+    "[sim=\(.hybrid_score // .score | . * 100 | floor / 100)] \(.memory[:250])"' "$TMPFILE")
   ALL_IDS=$(jq -r '[.context.results[].id] | join(",")' "$TMPFILE")
   ALL_SCORES=$(jq -r '[.context.results[].score] | map(tostring) | join(",")' "$TMPFILE")
 fi

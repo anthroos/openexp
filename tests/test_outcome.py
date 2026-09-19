@@ -1,4 +1,4 @@
-"""Tests for outcome-based reward resolution.
+"""Tests for outcome resolution.
 
 Tests OutcomeEvent, OutcomeResolver, CRMCSVResolver, resolve_outcomes,
 and client matching logic.
@@ -10,7 +10,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from openexp.outcome import OutcomeEvent, OutcomeResolver, resolve_outcomes, _find_memories_for_entity
+from openexp.outcome import OutcomeEvent, OutcomeResolver, resolve_outcomes
 from openexp.resolvers.crm_csv import (
     CRMCSVResolver,
     client_matches,
@@ -27,22 +27,15 @@ def cleanup_test_memories():
     yield
 
 
-@pytest.fixture(autouse=True)
-def _isolate_reward_log(tmp_path):
-    """Prevent tests from polluting the real reward_log.jsonl."""
-    log_path = tmp_path / "reward_log.jsonl"
-    with patch("openexp.core.reward_log.REWARD_LOG_PATH", log_path):
-        yield
-
 
 class TestOutcomeEvent:
     def test_basic_construction(self):
         event = OutcomeEvent(
-            entity_id="comp-squad",
+            entity_id="comp-acme",
             event_name="deal_closed",
             reward=0.8,
         )
-        assert event.entity_id == "comp-squad"
+        assert event.entity_id == "comp-acme"
         assert event.event_name == "deal_closed"
         assert event.reward == 0.8
         assert event.details == {}
@@ -67,7 +60,7 @@ class TestOutcomeEvent:
 
 class TestClientMatching:
     def test_exact_match(self):
-        assert client_matches("comp-squad", "comp-squad")
+        assert client_matches("comp-acme", "comp-acme")
 
     def test_cross_prefix_match(self):
         assert client_matches("cli-dt-001", "comp-dt-001")
@@ -82,19 +75,19 @@ class TestClientMatching:
         assert not client_matches("comp-a", "cli-a")
 
     def test_no_prefix_exact(self):
-        assert client_matches("squad", "squad")
+        assert client_matches("acme", "acme")
 
     def test_no_prefix_different(self):
-        assert not client_matches("squad", "other")
+        assert not client_matches("acme", "other")
 
     def test_extract_core_cli(self):
         assert _extract_core("cli-dt-001") == "dt-001"
 
     def test_extract_core_comp(self):
-        assert _extract_core("comp-squad") == "squad"
+        assert _extract_core("comp-acme") == "acme"
 
     def test_extract_core_lead(self):
-        assert _extract_core("lead-squad-001") == "squad-001"
+        assert _extract_core("lead-acme-001") == "acme-001"
 
     def test_extract_core_no_prefix(self):
         assert _extract_core("custom-id") == "custom-id"
@@ -237,10 +230,10 @@ class TestResolveOutcomes:
     def test_no_resolvers(self):
         result = resolve_outcomes(resolvers=[])
         assert result["total_events"] == 0
-        assert result["memories_rewarded"] == 0
+        assert result["predictions_resolved"] == 0
 
     def test_with_mock_resolver(self):
-        """Mock resolver + mock Qdrant → memories get rewarded."""
+        """Mock resolver events resolve matching pending predictions."""
         class MockResolver(OutcomeResolver):
             @property
             def name(self):
@@ -251,28 +244,19 @@ class TestResolveOutcomes:
                     OutcomeEvent(entity_id="comp-test", event_name="deal_closed", reward=0.8),
                 ]
 
-        from openexp.core.q_value import QCache, QValueUpdater
+        mock_tracker = MagicMock()
+        mock_tracker.get_pending_predictions.return_value = [
+            {"id": "pred_abc123", "client_id": "comp-test", "prediction": "Deal will close"}
+        ]
+        mock_tracker.log_outcome.return_value = {"prediction_id": "pred_abc123"}
 
-        q_cache = QCache()
-        q_updater = QValueUpdater(cache=q_cache)
-
-        # Mock _find_memories_for_entity to return some IDs
-        with patch("openexp.outcome._find_memories_for_entity", return_value=["mem-1", "mem-2"]):
-            result = resolve_outcomes(
-                resolvers=[MockResolver()],
-                q_cache=q_cache,
-                q_updater=q_updater,
-            )
+        result = resolve_outcomes(
+            resolvers=[MockResolver()],
+            reward_tracker=mock_tracker,
+        )
 
         assert result["total_events"] == 1
-        assert result["memories_rewarded"] == 2
-
-        # Verify Q-values were updated
-        q1 = q_cache.get("mem-1")
-        assert q1 is not None
-        assert q1["q_action"] != 0.5  # updated from default
-        assert q1["q_hypothesis"] != 0.5
-        assert q1["q_fit"] != 0.5
+        assert result["predictions_resolved"] == 1
 
     def test_resolver_failure_handled(self):
         """Failed resolver doesn't crash the pipeline."""
@@ -300,24 +284,16 @@ class TestResolveOutcomes:
                     OutcomeEvent(entity_id="comp-test", event_name="deal_closed", reward=0.8),
                 ]
 
-        from openexp.core.q_value import QCache, QValueUpdater
-
-        q_cache = QCache()
-        q_updater = QValueUpdater(cache=q_cache)
-
         mock_tracker = MagicMock()
         mock_tracker.get_pending_predictions.return_value = [
             {"id": "pred_abc123", "client_id": "comp-test", "prediction": "Deal will close"}
         ]
         mock_tracker.log_outcome.return_value = {"prediction_id": "pred_abc123", "reward": 0.8}
 
-        with patch("openexp.outcome._find_memories_for_entity", return_value=[]):
-            result = resolve_outcomes(
-                resolvers=[MockResolver()],
-                reward_tracker=mock_tracker,
-                q_cache=q_cache,
-                q_updater=q_updater,
-            )
+        result = resolve_outcomes(
+            resolvers=[MockResolver()],
+            reward_tracker=mock_tracker,
+        )
 
         assert result["predictions_resolved"] == 1
         mock_tracker.log_outcome.assert_called_once()

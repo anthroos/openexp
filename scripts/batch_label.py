@@ -16,8 +16,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from openexp.core.direct_search import add_experience
-from openexp.core.q_value import QCache
-from openexp.core.config import Q_CACHE_PATH
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger(__name__)
@@ -196,7 +194,7 @@ def _parse_json(text: str):
     return json.loads(t.strip())
 
 
-def label_thread(thread: dict, q_cache: QCache, force: bool = False) -> dict:
+def label_thread(thread: dict, force: bool = False) -> dict:
     """Label one thread: extract → Opus → save → Qdrant. Returns stats."""
     tid = thread["thread_id"]
     name = thread["name"]
@@ -250,7 +248,7 @@ def label_thread(thread: dict, q_cache: QCache, force: bool = False) -> dict:
     stored = 0
     for exp in experiences:
         try:
-            add_experience(exp, thread_id=tid, thread_name=name, q_cache=q_cache)
+            add_experience(exp, thread_id=tid, thread_name=name)
             stored += 1
         except Exception as e:
             log.error("Thread %d exp %s: Qdrant failed: %s", tid, exp.get("experience_id"), e)
@@ -284,7 +282,6 @@ def main():
     threads.sort(key=lambda t: t.get("total_messages", 0), reverse=True)
 
     THREADS_DIR.mkdir(exist_ok=True)
-    q_cache = QCache(Q_CACHE_PATH)
 
     results = []
     total_labels = 0
@@ -294,18 +291,13 @@ def main():
         if args.thread_ids and tid not in args.thread_ids:
             continue
 
-        result = label_thread(thread, q_cache, force=args.force)
+        result = label_thread(thread, force=args.force)
         results.append(result)
         total_labels += result.get("labels", 0)
 
-        # Save Q-cache every 5 threads
         if (i + 1) % 5 == 0:
-            q_cache.save(Q_CACHE_PATH)
             log.info("--- Checkpoint: %d/%d threads, %d labels total ---",
                      i + 1, len(threads), total_labels)
-
-    # Final save
-    q_cache.save(Q_CACHE_PATH)
 
     # Summary
     summary = {
