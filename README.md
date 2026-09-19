@@ -151,7 +151,7 @@ Two layers of identity:
 
 See `docs/skill-architecture.md` for the full naming convention, install flow, and design rationale.
 
-The `experiences/` directory in this repo is the seed of an eventual marketplace. The publication format works; seeds will accumulate. A directory of installable experiences is the eventual surface, not a built product today.
+The `experiences/` directory in this repo is the seed of an eventual marketplace. Published packs are listed in [CATALOG.md](CATALOG.md). The publication format works; seeds will accumulate. A directory of installable experiences is the eventual surface, not a built product today.
 
 ## MCP Tools
 
